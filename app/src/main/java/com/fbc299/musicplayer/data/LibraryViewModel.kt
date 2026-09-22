@@ -20,7 +20,9 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             SharingStarted.Eagerly,
             ScanSettings(
                 filterEnabled = SettingsRepository.DEFAULT_FILTER_ENABLED,
-                minDurationSec = SettingsRepository.DEFAULT_MIN_DURATION_SEC
+                minDurationSec = SettingsRepository.DEFAULT_MIN_DURATION_SEC,
+                sizeFilterEnabled = SettingsRepository.DEFAULT_SIZE_FILTER_ENABLED,
+                minSizeKb = SettingsRepository.DEFAULT_MIN_SIZE_KB
             )
         )
 
@@ -58,11 +60,22 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { settingsRepository.setMinDurationSec(sec) }
     }
 
+    fun setSizeFilterEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setSizeFilterEnabled(enabled) }
+    }
+
+    fun setMinSizeKb(kb: Int) {
+        viewModelScope.launch { settingsRepository.setMinSizeKb(kb) }
+    }
+
     private suspend fun load(settings: ScanSettings) {
         _loading.value = true
         val minDurationMs =
             if (settings.filterEnabled) settings.minDurationSec * 1000L else 0L
-        val list = SongRepository.loadSongs(getApplication(), minDurationMs)
+        // 关闭大小过滤 → minSizeBytes=0 → SQL 不追加 SIZE>=? 子句
+        val minSizeBytes =
+            if (settings.sizeFilterEnabled) settings.minSizeKb * 1024L else 0L
+        val list = SongRepository.loadSongs(getApplication(), minDurationMs, minSizeBytes)
         _songs.value = list
         _albums.value = list.toAlbums()
         _artists.value = list.toArtists()

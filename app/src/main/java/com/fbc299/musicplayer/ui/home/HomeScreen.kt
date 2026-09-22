@@ -249,7 +249,9 @@ fun HomeScreen(
                 else -> SettingsTab(
                     settings = scanSettings,
                     onFilterChanged = { libraryViewModel.setFilterEnabled(it) },
-                    onThresholdChanged = { libraryViewModel.setMinDurationSec(it) }
+                    onThresholdChanged = { libraryViewModel.setMinDurationSec(it) },
+                    onSizeFilterChanged = { libraryViewModel.setSizeFilterEnabled(it) },
+                    onSizeThresholdChanged = { libraryViewModel.setMinSizeKb(it) }
                 )
             }
         }

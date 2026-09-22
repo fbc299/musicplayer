@@ -58,6 +58,11 @@
     <string name="filter_enabled">启用最短时长过滤</string>
     <string name="filter_enabled_desc">开启后只显示时长不低于阈值的歌曲</string>
     <string name="threshold_value">最短时长：%1$d 秒</string>
+
+    <!-- P3：文件大小过滤 -->
+    <string name="size_filter_enabled">启用最短文件大小过滤</string>
+    <string name="size_filter_enabled_desc">开启后只显示文件大小不低于阈值的歌曲（0 字节文件始终不显示）</string>
+    <string name="size_threshold_value">最短文件大小：%1$s</string>
     <string name="settings_about">关于</string>
     <string name="about_version">版本 %1$s</string>
     <string name="about_text">本地音乐播放器，纯离线播放。基于 Media3 与 Jetpack Compose 打造，支持专辑、艺术家、搜索、歌词与播放队列。</string>

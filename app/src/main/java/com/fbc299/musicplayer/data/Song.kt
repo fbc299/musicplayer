@@ -41,8 +41,14 @@ object SongRepository {
     /**
      * 扫描本地音乐。
      * @param minDurationMs 最短时长阈值（毫秒），<=0 表示不按时长过滤
+     * @param minSizeBytes 最短文件大小阈值（字节），<=0 表示不按大小过滤
+     *   注意：SIZE > 0 为永久过滤，0 字节文件任何情况下都不显示
      */
-    suspend fun loadSongs(context: Context, minDurationMs: Long): List<Song> =
+    suspend fun loadSongs(
+        context: Context,
+        minDurationMs: Long,
+        minSizeBytes: Long = 0L
+    ): List<Song> =
         withContext(Dispatchers.IO) {
         val songs = mutableListOf<Song>()
         val projection = arrayOf(
@@ -57,14 +63,20 @@ object SongRepository {
             MediaStore.Audio.Media.IS_MUSIC
         )
         val selection = buildString {
+            // 0 字节文件永久过滤，与开关无关
             append("${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ")
             append("${MediaStore.Audio.Media.SIZE} > 0")
             if (minDurationMs > 0L) {
                 append(" AND ${MediaStore.Audio.Media.DURATION} >= ?")
             }
+            if (minSizeBytes > 0L) {
+                append(" AND ${MediaStore.Audio.Media.SIZE} >= ?")
+            }
         }
-        val selectionArgs =
-            if (minDurationMs > 0L) arrayOf(minDurationMs.toString()) else null
+        val args = mutableListOf<String>()
+        if (minDurationMs > 0L) args += minDurationMs.toString()
+        if (minSizeBytes > 0L) args += minSizeBytes.toString()
+        val selectionArgs = args.toTypedArray().takeIf { it.isNotEmpty() }
         val sortOrder = "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
 
         context.contentResolver.query(

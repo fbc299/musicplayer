@@ -30,12 +30,14 @@ import com.fbc299.musicplayer.BuildConfig
 import com.fbc299.musicplayer.R
 import com.fbc299.musicplayer.data.ScanSettings
 
-/** 设置 Tab：最短时长过滤 + 关于 */
+/** 设置 Tab：最短时长过滤 + 文件大小过滤 + 关于 */
 @Composable
 fun SettingsTab(
     settings: ScanSettings,
     onFilterChanged: (Boolean) -> Unit,
-    onThresholdChanged: (Int) -> Unit
+    onThresholdChanged: (Int) -> Unit,
+    onSizeFilterChanged: (Boolean) -> Unit,
+    onSizeThresholdChanged: (Int) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -99,6 +101,69 @@ fun SettingsTab(
         }
 
         Spacer(Modifier.height(16.dp))
+
+        // —— 文件大小过滤 ——
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.size_filter_enabled),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = stringResource(R.string.size_filter_enabled_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.weight(0.05f))
+            Switch(
+                checked = settings.sizeFilterEnabled,
+                onCheckedChange = onSizeFilterChanged,
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary
+                )
+            )
+        }
+
+        if (settings.sizeFilterEnabled) {
+            var pendingKb by remember(settings.minSizeKb) {
+                mutableFloatStateOf(settings.minSizeKb.toFloat())
+            }
+            Text(
+                text = stringResource(
+                    R.string.size_threshold_value,
+                    formatSizeKb(pendingKb)
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+            // 非线性滑杆：0–1 MB 占 60% 行程（小值好调），1–10 MB 占 40%
+            Slider(
+                value = sizePositionFromKb(pendingKb),
+                onValueChange = { pos ->
+                    pendingKb = snapSizeKb(sizeKbFromPosition(pos))
+                },
+                onValueChangeFinished = {
+                    onSizeThresholdChanged(snapSizeKb(pendingKb).toInt())
+                },
+                valueRange = 0f..1f,
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.primary,
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
         Spacer(Modifier.height(16.dp))
 
@@ -128,3 +193,36 @@ private fun SectionTitle(text: String) {
         modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
     )
 }
+
+// —— 文件大小滑杆映射（KB ↔ 0..1 位置）——
+// 分段线性：0–1 MB（1024 KB）占前 60% 行程，1–10 MB 占后 40%，小阈值更易微调
+private const val SIZE_SEGMENT_A_POS = 0.6f
+private const val SIZE_SEGMENT_A_KB = 1024f // 1 MB
+private const val SIZE_MAX_KB = 10240f // 10 MB
+
+private fun sizePositionFromKb(kb: Float): Float =
+    if (kb <= SIZE_SEGMENT_A_KB) {
+        kb / SIZE_SEGMENT_A_KB * SIZE_SEGMENT_A_POS
+    } else {
+        SIZE_SEGMENT_A_POS +
+            (kb - SIZE_SEGMENT_A_KB) / (SIZE_MAX_KB - SIZE_SEGMENT_A_KB) *
+            (1f - SIZE_SEGMENT_A_POS)
+    }
+
+private fun sizeKbFromPosition(pos: Float): Float =
+    if (pos <= SIZE_SEGMENT_A_POS) {
+        pos / SIZE_SEGMENT_A_POS * SIZE_SEGMENT_A_KB
+    } else {
+        SIZE_SEGMENT_A_KB +
+            (pos - SIZE_SEGMENT_A_POS) / (1f - SIZE_SEGMENT_A_POS) *
+            (SIZE_MAX_KB - SIZE_SEGMENT_A_KB)
+    }
+
+// 吸附到 4 KB：200 KB / 500 KB / 1 MB 等常用阈值均可精确命中
+private fun snapSizeKb(kb: Float): Float =
+    (Math.round(kb / 4f) * 4f).coerceIn(0f, SIZE_MAX_KB)
+
+/** 阈值展示：「500 KB」「1.5 MB」 */
+private fun formatSizeKb(kb: Float): String =
+    if (kb >= SIZE_SEGMENT_A_KB) "%.1f MB".format(kb / 1024f)
+    else "%d KB".format(Math.round(kb))
