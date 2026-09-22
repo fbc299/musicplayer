@@ -52,7 +52,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
 import com.fbc299.musicplayer.R
 import com.fbc299.musicplayer.data.AlbumInfo
 import com.fbc299.musicplayer.data.ArtistInfo
@@ -63,6 +62,7 @@ import com.fbc299.musicplayer.playback.PlayerConnection
 import com.fbc299.musicplayer.playback.PlayerState
 import com.fbc299.musicplayer.playback.StartPositionTicker
 import com.fbc299.musicplayer.playback.rememberPlayerState
+import com.fbc299.musicplayer.ui.CoverImage
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
@@ -257,6 +257,7 @@ fun HomeScreen(
                             header = {
                                 DetailHeader(
                                     artworkUri = selectedAlbum.artworkUri,
+                                    coverKey = selectedAlbum.songs.firstOrNull()?.id?.toString(),
                                     title = selectedAlbum.title,
                                     subtitle = selectedAlbum.artist,
                                     onPlayAll = {
@@ -285,6 +286,7 @@ fun HomeScreen(
                             header = {
                                 DetailHeader(
                                     artworkUri = selectedArtist.artworkUri,
+                                    coverKey = selectedArtist.songs.firstOrNull()?.id?.toString(),
                                     title = selectedArtist.name,
                                     subtitle = stringResource(
                                         R.string.artist_song_count,
@@ -313,7 +315,8 @@ fun HomeScreen(
                     onSizeThresholdChanged = { libraryViewModel.setMinSizeKb(it) },
                     onlineSettings = onlineSettings,
                     onOnlineEnabledChanged = { libraryViewModel.setOnlineEnabled(it) },
-                    onServerUrlChanged = { libraryViewModel.setServerUrl(it) }
+                    onServerUrlChanged = { libraryViewModel.setServerUrl(it) },
+                    onScraperEnabledChanged = { libraryViewModel.setScraperEnabled(it) }
                 )
             }
         }
@@ -405,14 +408,10 @@ private fun MiniPlayer(
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
-                AsyncImage(
-                    model = meta.artworkUri,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                    error = androidx.compose.ui.res.painterResource(
-                        android.R.drawable.ic_media_play
-                    )
+                CoverImage(
+                    localModel = meta.artworkUri,
+                    coverKey = item.mediaId,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
             Spacer(Modifier.width(12.dp))

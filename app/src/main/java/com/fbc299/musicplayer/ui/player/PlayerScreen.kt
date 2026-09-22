@@ -67,7 +67,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
-import coil.compose.AsyncImage
 import com.fbc299.musicplayer.R
 import com.fbc299.musicplayer.data.LrcParser
 import com.fbc299.musicplayer.data.LyricLine
@@ -79,6 +78,7 @@ import com.fbc299.musicplayer.playback.PlayerState
 import com.fbc299.musicplayer.playback.RepeatMode
 import com.fbc299.musicplayer.playback.StartPositionTicker
 import com.fbc299.musicplayer.playback.rememberPlayerState
+import com.fbc299.musicplayer.ui.CoverImage
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 
@@ -198,10 +198,9 @@ fun PlayerScreen(onClose: () -> Unit) {
             Spacer(Modifier.height(8.dp))
 
             // 大封面
-            AsyncImage(
-                model = meta.artworkUri,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
+            CoverImage(
+                localModel = meta.artworkUri,
+                coverKey = mediaId,
                 modifier = Modifier
                     .size(240.dp)
                     .shadow(

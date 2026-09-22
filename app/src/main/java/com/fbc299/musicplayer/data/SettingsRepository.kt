@@ -8,7 +8,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import org.json.JSONObject
 
 // 应用级设置存储（DataStore preferences）
 private val Context.settingsDataStore by preferencesDataStore(name = "app_settings")
@@ -25,15 +27,22 @@ data class ScanSettings(
 
 /**
  * P4 在线音源设置：在线搜索开关 + 聚合服务地址。
+ * P5 追加封面刮削开关：依赖在线开关，且复用同一服务器地址（不另设地址）。
  * 开关关闭或地址为空时，应用内不发起任何在线请求。
  */
 data class OnlineSettings(
     val enabled: Boolean,
-    val serverUrl: String
+    val serverUrl: String,
+    /** P5：自动刮削本地歌曲封面（依赖在线总开关 enabled） */
+    val scraperEnabled: Boolean = true
 ) {
     /** 是否真正可用（开关开且地址非空） */
     val active: Boolean
         get() = enabled && serverUrl.isNotBlank()
+
+    /** 封面刮削是否真正可用（在线可用且刮削开关开） */
+    val scraperActive: Boolean
+        get() = active && scraperEnabled
 }
 
 class SettingsRepository(private val context: Context) {
@@ -45,6 +54,10 @@ class SettingsRepository(private val context: Context) {
         val MIN_SIZE_KB = intPreferencesKey("min_size_kb")
         val ONLINE_ENABLED = booleanPreferencesKey("online_enabled")
         val ONLINE_SERVER = stringPreferencesKey("online_server")
+        /** P5：自动刮削封面开关（默认开） */
+        val SCRAPER_ENABLED = booleanPreferencesKey("scraper_enabled")
+        /** P5：封面刮削持久缓存（JSON string：songId → 封面 URL） */
+        val SCRAPER_CACHE = stringPreferencesKey("scraper_cache")
     }
 
     val settings: Flow<ScanSettings> = context.settingsDataStore.data
@@ -63,7 +76,8 @@ class SettingsRepository(private val context: Context) {
         .map { prefs ->
             OnlineSettings(
                 enabled = prefs[Keys.ONLINE_ENABLED] ?: DEFAULT_ONLINE_ENABLED,
-                serverUrl = prefs[Keys.ONLINE_SERVER] ?: DEFAULT_ONLINE_SERVER
+                serverUrl = prefs[Keys.ONLINE_SERVER] ?: DEFAULT_ONLINE_SERVER,
+                scraperEnabled = prefs[Keys.SCRAPER_ENABLED] ?: DEFAULT_SCRAPER_ENABLED
             )
         }
         .distinctUntilChanged()
@@ -82,6 +96,11 @@ class SettingsRepository(private val context: Context) {
         context.settingsDataStore.edit { it[Keys.ONLINE_SERVER] = url.trim() }
     }
 
+    /** P5：启用/关闭自动刮削封面（依赖在线总开关与同一服务器地址） */
+    suspend fun setScraperEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.SCRAPER_ENABLED] = enabled }
+    }
+
     suspend fun setMinDurationSec(sec: Int) {
         context.settingsDataStore.edit { it[Keys.MIN_DURATION_SEC] = sec.coerceIn(1, 60) }
     }
@@ -97,6 +116,35 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    // ——————————————————— P5 封面刮削持久缓存 ———————————————————
+
+    /**
+     * 读取封面刮削缓存（songId → 封面 URL）；缺失/损坏时返回空表。
+     * 启动时调用一次加载进内存 Map，命中即零网络。
+     */
+    suspend fun loadCoverCache(): Map<String, String> {
+        val raw = context.settingsDataStore.data.first()[Keys.SCRAPER_CACHE]
+            ?: return emptyMap()
+        return runCatching {
+            val json = JSONObject(raw)
+            val out = HashMap<String, String>(json.length())
+            for (key in json.keys()) {
+                val url = json.optString(key)
+                if (url.startsWith("http")) out[key] = url
+            }
+            out
+        }.getOrDefault(emptyMap())
+    }
+
+    /** 持久化封面刮削缓存（整体覆盖写；JSON string，key=scraper_cache） */
+    suspend fun saveCoverCache(cache: Map<String, String>) {
+        val json = JSONObject()
+        for ((key, url) in cache) {
+            if (key.isNotEmpty() && url.startsWith("http")) json.put(key, url)
+        }
+        context.settingsDataStore.edit { it[Keys.SCRAPER_CACHE] = json.toString() }
+    }
+
     companion object {
         const val DEFAULT_FILTER_ENABLED = true
         const val DEFAULT_MIN_DURATION_SEC = 3
@@ -110,5 +158,7 @@ class SettingsRepository(private val context: Context) {
         const val DEFAULT_ONLINE_ENABLED = true
         /** 默认聚合服务地址（与 OnlineMusicSource.DEFAULT_SERVER 同源） */
         const val DEFAULT_ONLINE_SERVER = OnlineMusicSource.DEFAULT_SERVER
+        /** P5：自动刮削封面默认开启 */
+        const val DEFAULT_SCRAPER_ENABLED = true
     }
 }

@@ -35,9 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.fbc299.musicplayer.R
 import com.fbc299.musicplayer.data.AlbumInfo
+import com.fbc299.musicplayer.ui.CoverImage
 
 /** 专辑 Tab：专辑网格（封面 + 专辑名 + 歌曲数） */
 @Composable
@@ -82,12 +82,10 @@ private fun AlbumCell(album: AlbumInfo, onClick: () -> Unit) {
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
-            AsyncImage(
-                model = album.artworkUri,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_media_play)
+            CoverImage(
+                localModel = album.artworkUri,
+                coverKey = album.songs.firstOrNull()?.id?.toString(),
+                modifier = Modifier.fillMaxSize()
             )
         }
         Spacer(Modifier.height(8.dp))
@@ -113,6 +111,8 @@ private fun AlbumCell(album: AlbumInfo, onClick: () -> Unit) {
 @Composable
 fun DetailHeader(
     artworkUri: android.net.Uri,
+    /** P5 刮削映射键（该专辑/艺术家下首歌的 songId）；无则只走本地+占位 */
+    coverKey: String? = null,
     title: String,
     subtitle: String,
     onPlayAll: () -> Unit
@@ -123,10 +123,9 @@ fun DetailHeader(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        AsyncImage(
-            model = artworkUri,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
+        CoverImage(
+            localModel = artworkUri,
+            coverKey = coverKey,
             modifier = Modifier
                 .size(160.dp)
                 .clip(RoundedCornerShape(16.dp))

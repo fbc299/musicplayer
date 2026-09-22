@@ -43,6 +43,7 @@ import coil.compose.AsyncImage
 import com.fbc299.musicplayer.R
 import com.fbc299.musicplayer.data.OnlineSong
 import com.fbc299.musicplayer.data.Song
+import com.fbc299.musicplayer.ui.CoverImage
 
 /**
  * 歌曲 Tab：顶部搜索栏 + 列表。
@@ -443,14 +444,10 @@ fun SongCover(song: Song, size: Dp) {
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
-        AsyncImage(
-            model = song.artworkUri,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-            error = androidx.compose.ui.res.painterResource(
-                android.R.drawable.ic_media_play
-            )
+        CoverImage(
+            localModel = song.artworkUri,
+            coverKey = song.id.toString(),
+            modifier = Modifier.fillMaxSize()
         )
     }
 }

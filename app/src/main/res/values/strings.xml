@@ -81,4 +81,8 @@
     <string name="online_url_failed">获取播放地址失败</string>
     <string name="source_netease">网易云</string>
     <string name="source_qq">QQ</string>
+
+    <!-- P5：封面刮削 -->
+    <string name="scraper_enabled">自动刮削封面</string>
+    <string name="scraper_enabled_desc">在线音源开启时，为本地歌曲联网补全封面（复用同一服务器地址）</string>
 </resources>

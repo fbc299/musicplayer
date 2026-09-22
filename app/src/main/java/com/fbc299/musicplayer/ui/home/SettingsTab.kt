@@ -36,7 +36,7 @@ import com.fbc299.musicplayer.R
 import com.fbc299.musicplayer.data.OnlineSettings
 import com.fbc299.musicplayer.data.ScanSettings
 
-/** 设置 Tab：最短时长过滤 + 文件大小过滤 + 在线音源 + 关于 */
+/** 设置 Tab：最短时长过滤 + 文件大小过滤 + 在线音源与封面刮削 + 关于 */
 @Composable
 fun SettingsTab(
     settings: ScanSettings,
@@ -46,7 +46,8 @@ fun SettingsTab(
     onSizeThresholdChanged: (Int) -> Unit,
     onlineSettings: OnlineSettings,
     onOnlineEnabledChanged: (Boolean) -> Unit,
-    onServerUrlChanged: (String) -> Unit
+    onServerUrlChanged: (String) -> Unit,
+    onScraperEnabledChanged: (Boolean) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -231,6 +232,37 @@ fun SettingsTab(
                     unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant,
                     focusedContainerColor = MaterialTheme.colorScheme.surface,
                     unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        }
+
+        // —— 自动刮削封面（P5：依赖在线总开关，复用同一服务器地址，不另设地址框） ——
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.scraper_enabled),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = stringResource(R.string.scraper_enabled_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.weight(0.05f))
+            Switch(
+                checked = onlineSettings.scraperEnabled,
+                enabled = onlineSettings.enabled,
+                onCheckedChange = onScraperEnabledChanged,
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         }

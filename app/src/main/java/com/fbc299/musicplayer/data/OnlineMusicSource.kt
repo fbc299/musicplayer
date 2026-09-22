@@ -32,7 +32,9 @@ data class OnlineSong(
     val artist: String,
     val album: String,
     /** 封面 http URL，可为空 */
-    val artworkUrl: String?
+    val artworkUrl: String?,
+    /** Meting pic 端点用的封面 id（netease 搜索结果的 pic_id 字段），可为空 */
+    val picId: String? = null
 ) {
     val mediaId: String
         get() = "$ONLINE_MEDIA_ID_PREFIX${source}_$sourceId"
@@ -60,6 +62,7 @@ data class OnlineSong(
  *   GET /?type=search&source={netease|qq}&name={关键词}&s=0&n=20  → JSON 数组
  *   GET /?type=url&source=...&id=...                              → {url: 直链}
  *   GET /?type=lyric&source=...&id=...                            → LRC 文本
+ *   GET /?type=pic&source=...&id={pic_id}&size=500                → {url: 封面图 URL}
  *
  * 所有响应解析集中在本文件（parseSearchList / findUrlIn / findLyricIn），
  * 服务端实际格式如有出入只需改这里：兼容 数组 / {data:[...]} 等外壳、
@@ -77,16 +80,21 @@ object OnlineMusicSource {
     private const val PAGE_SIZE = 20
 
     /**
-     * 聚合搜索：并发请求全部数据源，单源失败静默忽略；
+     * 聚合搜索：并发请求给定数据源（默认 SOURCES），单源失败静默忽略；
      * 全部数据源失败才抛异常（调用方显示「在线搜索失败」）。
-     * 结果按歌名规范化去重，保持 netease → qq 的来源顺序。
+     * 结果按歌名规范化去重，保持给定的来源顺序。
+     * @param sources 仅请求这些数据源（P5 封面刮削只搜 netease 取 pic_id）
      */
-    suspend fun search(server: String, keyword: String): List<OnlineSong> =
+    suspend fun search(
+        server: String,
+        keyword: String,
+        sources: List<String> = SOURCES
+    ): List<OnlineSong> =
         withContext(Dispatchers.IO) {
             val kw = keyword.trim()
-            if (kw.isEmpty()) return@withContext emptyList()
+            if (kw.isEmpty() || sources.isEmpty()) return@withContext emptyList()
             val results = coroutineScope {
-                SOURCES.map { source ->
+                sources.map { source ->
                     async { runCatching { searchSource(server, source, kw) } }
                 }.awaitAll()
             }
@@ -112,6 +120,20 @@ object OnlineMusicSource {
             val url = normalizeServer(server) +
                 "/?type=lyric&source=$source&id=" + URLEncoder.encode(id, "UTF-8")
             extractLyric(httpGet(url))
+        }
+
+    /**
+     * 取封面大图 URL（P5 封面刮削，Meting pic 端点）：
+     *   GET /?type=pic&source=...&id={pic_id}&size=500
+     * 解析复用 extractUrl，宽容兼容 {url:...} / [{"url":...}] / 纯 URL 文本；
+     * 请求失败或认不出 URL 时抛异常，由调用方（CoverScraper）兜底为 null。
+     */
+    suspend fun pic(server: String, source: String, picId: String): String? =
+        withContext(Dispatchers.IO) {
+            val url = normalizeServer(server) +
+                "/?type=pic&source=$source&id=" + URLEncoder.encode(picId, "UTF-8") +
+                "&size=500"
+            extractUrl(httpGet(url))
         }
 
     // ——————————————————— 请求 ———————————————————
@@ -184,6 +206,8 @@ object OnlineMusicSource {
             val pic = pickScalar(
                 o, listOf("pic", "picUrl", "pic_url", "picurl", "cover", "artwork", "image", "img")
             )?.let { normalizeArtwork(it) }
+            // P5：pic_id（封面刮削用），字段别名兼容常见变体
+            val picId = pickScalar(o, listOf("pic_id", "picId", "picid", "picID"))
             out.add(
                 OnlineSong(
                     source = source,
@@ -191,7 +215,8 @@ object OnlineMusicSource {
                     title = title,
                     artist = artist,
                     album = album,
-                    artworkUrl = pic
+                    artworkUrl = pic,
+                    picId = picId
                 )
             )
         }
