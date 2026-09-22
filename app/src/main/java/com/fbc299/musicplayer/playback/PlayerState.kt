@@ -23,7 +23,11 @@ class PlayerState(val controller: MediaController) {
     var shuffleEnabled by mutableStateOf(controller.shuffleModeEnabled)
 
     /** 播放队列（完整 MediaItem 列表） */
-    var mediaItems by mutableStateOf<List<MediaItem>>(controller.mediaItems)
+    var mediaItems by mutableStateOf<List<MediaItem>>(readMediaItems())
+
+    /** Player 无 mediaItems 属性，用 getMediaItemCount/getMediaItemAt 构造列表 */
+    private fun readMediaItems(): List<MediaItem> =
+        (0 until controller.mediaItemCount).map { controller.getMediaItemAt(it) }
 
     /** 当前曲目在队列中的下标 */
     var currentIndex by mutableStateOf(controller.currentMediaItemIndex)
@@ -55,7 +59,7 @@ class PlayerState(val controller: MediaController) {
         durationMs = controller.duration.coerceAtLeast(0L)
         positionMs = controller.currentPosition.coerceAtLeast(0L)
         shuffleEnabled = controller.shuffleModeEnabled
-        mediaItems = controller.mediaItems
+        mediaItems = readMediaItems()
         currentIndex = controller.currentMediaItemIndex
         repeatMode = controller.repeatMode
     }

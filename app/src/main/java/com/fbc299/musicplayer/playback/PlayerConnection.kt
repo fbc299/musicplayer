@@ -100,7 +100,7 @@ object PlayerConnection {
     fun jumpTo(index: Int) {
         val c = controller ?: return
         if (index < 0 || index >= c.mediaItemCount) return
-        c.seekToMediaItem(index)
+        c.seekTo(index, 0L)
         c.play()
     }
 
