@@ -16,7 +16,7 @@ import coil.compose.AsyncImage
  * P5 刮削封面映射（key → 封面 URL）：由 MainActivity 在组合根提供，
  * 歌曲列表行 / 专辑格 / 专辑详情头 / 播放页大封面 / 迷你条 统一读取。
  */
-val LocalScrapedCovers = staticCompositionLocalOf<Map<String, String>>(emptyMap())
+val LocalScrapedCovers = staticCompositionLocalOf<Map<String, String>> { emptyMap() }
 
 /**
  * 统一封面组件：本地封面 → 刮削封面 → 占位图 三级 fallback。
