@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">音乐播放器</string>
+    <string name="tab_songs">歌曲</string>
+    <string name="tab_albums">专辑</string>
+    <string name="tab_artists">艺术家</string>
+    <string name="tab_playlists">歌单</string>
+    <string name="empty_library">暂无音乐</string>
+    <string name="empty_hint">将音频文件放入设备后下拉刷新</string>
+    <string name="now_playing">正在播放</string>
+    <string name="play">播放</string>
+    <string name="pause">暂停</string>
+    <string name="next">下一首</string>
+    <string name="previous">上一首</string>
+    <string name="shuffle">随机播放</string>
+    <string name="repeat">循环</string>
+    <string name="permission_needed">需要音频权限才能读取本机音乐</string>
+    <string name="grant">授权</string>
+</resources>
