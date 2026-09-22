@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -22,6 +23,19 @@ data class ScanSettings(
     val minSizeKb: Int
 )
 
+/**
+ * P4 在线音源设置：在线搜索开关 + 聚合服务地址。
+ * 开关关闭或地址为空时，应用内不发起任何在线请求。
+ */
+data class OnlineSettings(
+    val enabled: Boolean,
+    val serverUrl: String
+) {
+    /** 是否真正可用（开关开且地址非空） */
+    val active: Boolean
+        get() = enabled && serverUrl.isNotBlank()
+}
+
 class SettingsRepository(private val context: Context) {
 
     private object Keys {
@@ -29,6 +43,8 @@ class SettingsRepository(private val context: Context) {
         val MIN_DURATION_SEC = intPreferencesKey("min_duration_sec")
         val SIZE_FILTER_ENABLED = booleanPreferencesKey("size_filter_enabled")
         val MIN_SIZE_KB = intPreferencesKey("min_size_kb")
+        val ONLINE_ENABLED = booleanPreferencesKey("online_enabled")
+        val ONLINE_SERVER = stringPreferencesKey("online_server")
     }
 
     val settings: Flow<ScanSettings> = context.settingsDataStore.data
@@ -42,8 +58,28 @@ class SettingsRepository(private val context: Context) {
         }
         .distinctUntilChanged()
 
+    /** 在线音源设置（独立于扫描设置，修改不会触发媒体库重扫） */
+    val onlineSettings: Flow<OnlineSettings> = context.settingsDataStore.data
+        .map { prefs ->
+            OnlineSettings(
+                enabled = prefs[Keys.ONLINE_ENABLED] ?: DEFAULT_ONLINE_ENABLED,
+                serverUrl = prefs[Keys.ONLINE_SERVER] ?: DEFAULT_ONLINE_SERVER
+            )
+        }
+        .distinctUntilChanged()
+
     suspend fun setFilterEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { it[Keys.FILTER_ENABLED] = enabled }
+    }
+
+    /** P4：启用/关闭在线搜索 */
+    suspend fun setOnlineEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.ONLINE_ENABLED] = enabled }
+    }
+
+    /** P4：保存聚合服务地址（允许清空 —— 清空即停用在线请求） */
+    suspend fun setServerUrl(url: String) {
+        context.settingsDataStore.edit { it[Keys.ONLINE_SERVER] = url.trim() }
     }
 
     suspend fun setMinDurationSec(sec: Int) {
@@ -70,5 +106,9 @@ class SettingsRepository(private val context: Context) {
         const val DEFAULT_MIN_SIZE_KB = 500
         /** 阈值上限 10 MB（10240 KB） */
         const val MAX_SIZE_KB = 10 * 1024
+        /** 在线搜索默认开启 */
+        const val DEFAULT_ONLINE_ENABLED = true
+        /** 默认聚合服务地址（与 OnlineMusicSource.DEFAULT_SERVER 同源） */
+        const val DEFAULT_ONLINE_SERVER = OnlineMusicSource.DEFAULT_SERVER
     }
 }

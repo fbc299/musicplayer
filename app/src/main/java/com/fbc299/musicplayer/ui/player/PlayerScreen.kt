@@ -71,11 +71,16 @@ import coil.compose.AsyncImage
 import com.fbc299.musicplayer.R
 import com.fbc299.musicplayer.data.LrcParser
 import com.fbc299.musicplayer.data.LyricLine
+import com.fbc299.musicplayer.data.ONLINE_MEDIA_ID_PREFIX
+import com.fbc299.musicplayer.data.OnlineMusicSource
+import com.fbc299.musicplayer.data.SettingsRepository
 import com.fbc299.musicplayer.playback.PlayerConnection
 import com.fbc299.musicplayer.playback.PlayerState
 import com.fbc299.musicplayer.playback.RepeatMode
 import com.fbc299.musicplayer.playback.StartPositionTicker
 import com.fbc299.musicplayer.playback.rememberPlayerState
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
 
 fun formatMs(ms: Long): String {
     val totalSec = ms / 1000
@@ -127,13 +132,33 @@ fun PlayerScreen(onClose: () -> Unit) {
 
         val meta = item.mediaMetadata
 
-        // 歌词：随播放切换异步加载同目录同名 .lrc
+        // 歌词：本地曲目读同目录 .lrc；在线曲目（mediaId 前缀 "on_"）拉聚合服务歌词
         val mediaId = item.mediaId
         var lyricLines by remember(mediaId) { mutableStateOf<List<LyricLine>>(emptyList()) }
         var lyricLoaded by remember(mediaId) { mutableStateOf(false) }
         LaunchedEffect(mediaId) {
             lyricLoaded = false
-            lyricLines = LrcParser.loadLyrics(context, mediaId.toLongOrNull() ?: -1L)
+            lyricLines = if (mediaId.startsWith(ONLINE_MEDIA_ID_PREFIX)) {
+                val rest = mediaId.removePrefix(ONLINE_MEDIA_ID_PREFIX)
+                val source = rest.substringBefore('_', "")
+                val id = rest.substringAfter('_', "")
+                if (source.isEmpty() || id.isEmpty()) {
+                    emptyList()
+                } else {
+                    val serverResult = runCatching {
+                        SettingsRepository(context).onlineSettings.first().serverUrl
+                    }
+                    ensureActive()
+                    val server = serverResult.getOrNull().orEmpty()
+                    val lyricResult = if (server.isBlank()) null
+                    else runCatching { OnlineMusicSource.lyric(server, source, id) }
+                    ensureActive()
+                    val lrc = lyricResult?.getOrNull()
+                    if (lrc.isNullOrBlank()) emptyList() else LrcParser.parseLrc(lrc)
+                }
+            } else {
+                LrcParser.loadLyrics(context, mediaId.toLongOrNull() ?: -1L)
+            }
             lyricLoaded = true
         }
 

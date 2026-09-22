@@ -48,6 +48,22 @@ object PlayerConnection {
         c.play()
     }
 
+    /**
+     * P4 在线曲目播放：把 [items] 插入当前队列的下一位并立即从 [startIndex] 播放。
+     * 队列为空时插入位为 0（等价于直接作为整个队列）；
+     * 队列非空时保留用户已有曲目上下文，播完在线曲目按「下一首」可回到原队列。
+     */
+    fun playOnline(items: List<MediaItem>, startIndex: Int) {
+        val c = controller ?: return
+        if (items.isEmpty()) return
+        // 队列为空时 currentMediaItemIndex 为 INDEX_UNSET（Int.MIN_VALUE），coerceIn 归到 0
+        val base = (c.currentMediaItemIndex + 1).coerceIn(0, c.mediaItemCount)
+        c.addMediaItems(base, items)
+        c.seekTo(base + startIndex, 0L)
+        c.prepare()
+        c.play()
+    }
+
     fun togglePlay() {
         val c = controller ?: return
         if (c.isPlaying) c.pause() else c.play()

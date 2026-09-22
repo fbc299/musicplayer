@@ -65,5 +65,20 @@
     <string name="size_threshold_value">最短文件大小：%1$s</string>
     <string name="settings_about">关于</string>
     <string name="about_version">版本 %1$s</string>
-    <string name="about_text">本地音乐播放器，纯离线播放。基于 Media3 与 Jetpack Compose 打造，支持专辑、艺术家、搜索、歌词与播放队列。</string>
+    <string name="about_text">本地与在线音乐播放器。基于 Media3 与 Jetpack Compose 打造，支持在线搜索试听、专辑、艺术家、搜索、歌词与播放队列。</string>
+
+    <!-- P4：在线音源 -->
+    <string name="settings_online">在线音源</string>
+    <string name="online_enabled">启用在线搜索</string>
+    <string name="online_enabled_desc">开启后在歌曲页搜索时同步搜索在线音源（网易云 / QQ）</string>
+    <string name="online_server_label">服务器地址</string>
+    <string name="online_server_hint">http://fbc299.xyz:18090</string>
+    <string name="section_local">本地</string>
+    <string name="section_online">在线</string>
+    <string name="online_loading">正在搜索…</string>
+    <string name="online_search_failed">在线搜索失败</string>
+    <string name="online_no_results">无在线结果</string>
+    <string name="online_url_failed">获取播放地址失败</string>
+    <string name="source_netease">网易云</string>
+    <string name="source_qq">QQ</string>
 </resources>

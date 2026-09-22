@@ -1,5 +1,6 @@
 package com.fbc299.musicplayer.ui.home
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -34,15 +35,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,10 +57,14 @@ import com.fbc299.musicplayer.R
 import com.fbc299.musicplayer.data.AlbumInfo
 import com.fbc299.musicplayer.data.ArtistInfo
 import com.fbc299.musicplayer.data.LibraryViewModel
+import com.fbc299.musicplayer.data.OnlineMusicSource
+import com.fbc299.musicplayer.data.OnlineSong
 import com.fbc299.musicplayer.playback.PlayerConnection
 import com.fbc299.musicplayer.playback.PlayerState
 import com.fbc299.musicplayer.playback.StartPositionTicker
 import com.fbc299.musicplayer.playback.rememberPlayerState
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 
 /** 底部导航四个 Tab */
 enum class HomeTab { SONGS, ALBUMS, ARTISTS, SETTINGS }
@@ -72,6 +80,11 @@ fun HomeScreen(
     val artists by libraryViewModel.artists.collectAsState()
     val loading by libraryViewModel.loading.collectAsState()
     val scanSettings by libraryViewModel.scanSettings.collectAsState()
+    // P4 在线音源状态
+    val onlineSettings by libraryViewModel.onlineSettings.collectAsState()
+    val onlineResults by libraryViewModel.onlineResults.collectAsState()
+    val onlineLoading by libraryViewModel.onlineLoading.collectAsState()
+    val onlineError by libraryViewModel.onlineError.collectAsState()
     val playerState = rememberPlayerState()
     StartPositionTicker(playerState)
 
@@ -79,6 +92,46 @@ fun HomeScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedAlbumId by remember { mutableStateOf<Long?>(null) }
     var selectedArtistName by remember { mutableStateOf<String?>(null) }
+
+    // 搜索词变化 → 触发在线搜索（开关关闭/地址为空时 VM 内部直接清空，不发请求）
+    LaunchedEffect(searchQuery) {
+        libraryViewModel.searchOnline(searchQuery)
+    }
+
+    // 在线项点击 → 取直链 → 插入队列播放
+    var resolvingOnlineId by remember { mutableStateOf<String?>(null) }
+    val onlineScope = rememberCoroutineScope()
+    val appContext = LocalContext.current
+    val onlineActive = onlineSettings.active
+
+    val onOnlineClick: (OnlineSong) -> Unit = { song ->
+        if (resolvingOnlineId == null && onlineActive) {
+            resolvingOnlineId = song.mediaId
+            onlineScope.launch {
+                val result = runCatching {
+                    OnlineMusicSource.getUrl(
+                        onlineSettings.serverUrl,
+                        song.source,
+                        song.sourceId
+                    )
+                }
+                // 取消时不覆盖状态（runCatching 会吞掉取消异常）
+                ensureActive()
+                resolvingOnlineId = null
+                val directUrl = result.getOrNull()
+                if (directUrl.isNullOrBlank()) {
+                    Toast.makeText(
+                        appContext,
+                        appContext.getString(R.string.online_url_failed),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    PlayerConnection.playOnline(listOf(song.toMediaItem(directUrl)), 0)
+                    onOpenPlayer()
+                }
+            }
+        }
+    }
 
     // 详情对象随数据刷新自动失效（找不到则回到列表）
     val selectedAlbum: AlbumInfo? =
@@ -183,7 +236,13 @@ fun HomeScreen(
                     onSongClick = { index ->
                         PlayerConnection.playSongs(songs, index)
                         onOpenPlayer()
-                    }
+                    },
+                    onlineActive = onlineActive,
+                    onlineResults = onlineResults,
+                    onlineLoading = onlineLoading,
+                    onlineError = onlineError,
+                    resolvingOnlineId = resolvingOnlineId,
+                    onOnlineClick = onOnlineClick
                 )
 
                 tab == HomeTab.ALBUMS -> {
@@ -251,7 +310,10 @@ fun HomeScreen(
                     onFilterChanged = { libraryViewModel.setFilterEnabled(it) },
                     onThresholdChanged = { libraryViewModel.setMinDurationSec(it) },
                     onSizeFilterChanged = { libraryViewModel.setSizeFilterEnabled(it) },
-                    onSizeThresholdChanged = { libraryViewModel.setMinSizeKb(it) }
+                    onSizeThresholdChanged = { libraryViewModel.setMinSizeKb(it) },
+                    onlineSettings = onlineSettings,
+                    onOnlineEnabledChanged = { libraryViewModel.setOnlineEnabled(it) },
+                    onServerUrlChanged = { libraryViewModel.setServerUrl(it) }
                 )
             }
         }
