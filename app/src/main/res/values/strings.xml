@@ -5,6 +5,7 @@
     <string name="tab_albums">专辑</string>
     <string name="tab_artists">艺术家</string>
     <string name="tab_playlists">歌单</string>
+    <string name="tab_settings">设置</string>
     <string name="empty_library">暂无音乐</string>
     <string name="empty_hint">将音频文件放入设备后下拉刷新</string>
     <string name="now_playing">正在播放</string>
@@ -16,4 +17,48 @@
     <string name="repeat">循环</string>
     <string name="permission_needed">需要音频权限才能读取本机音乐</string>
     <string name="grant">授权</string>
+
+    <!-- P2：通用 / 导航 -->
+    <string name="refresh">刷新</string>
+    <string name="back">返回</string>
+    <string name="collapse">收起</string>
+    <string name="close">关闭</string>
+    <string name="unknown_song">未知歌曲</string>
+    <string name="unknown_artist">未知艺术家</string>
+    <string name="unknown_album">未知专辑</string>
+    <string name="no_playback">暂无播放内容</string>
+
+    <!-- P2：搜索 -->
+    <string name="search_hint">搜索歌曲、艺术家或专辑</string>
+    <string name="clear_search">清除搜索</string>
+    <string name="no_match">无匹配结果</string>
+
+    <!-- P2：专辑 / 艺术家 -->
+    <string name="albums_empty">暂无专辑</string>
+    <string name="artists_empty">暂无艺术家</string>
+    <string name="album_song_count">%1$d 首歌曲</string>
+    <string name="artist_song_count">%1$d 首歌曲 · %2$d 张专辑</string>
+    <string name="play_all">播放全部</string>
+
+    <!-- P2：循环模式与播放队列 -->
+    <string name="repeat_list">列表循环</string>
+    <string name="repeat_one">单曲循环</string>
+    <string name="repeat_off">关闭循环</string>
+    <string name="repeat_switch">切换循环模式</string>
+    <string name="queue">播放队列</string>
+    <string name="queue_count">共 %1$d 首</string>
+    <string name="queue_empty">播放队列为空</string>
+    <string name="queue_item_playing">正在播放</string>
+
+    <!-- P2：歌词 -->
+    <string name="no_lyrics">暂无歌词</string>
+
+    <!-- P2：设置 -->
+    <string name="settings_library">音乐库</string>
+    <string name="filter_enabled">启用最短时长过滤</string>
+    <string name="filter_enabled_desc">开启后只显示时长不低于阈值的歌曲</string>
+    <string name="threshold_value">最短时长：%1$d 秒</string>
+    <string name="settings_about">关于</string>
+    <string name="about_version">版本 %1$s</string>
+    <string name="about_text">本地音乐播放器，纯离线播放。基于 Media3 与 Jetpack Compose 打造，支持专辑、艺术家、搜索、歌词与播放队列。</string>
 </resources>

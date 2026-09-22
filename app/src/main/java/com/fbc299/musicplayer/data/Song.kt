@@ -38,7 +38,12 @@ data class Song(
 
 object SongRepository {
 
-    suspend fun loadSongs(context: Context): List<Song> = withContext(Dispatchers.IO) {
+    /**
+     * 扫描本地音乐。
+     * @param minDurationMs 最短时长阈值（毫秒），<=0 表示不按时长过滤
+     */
+    suspend fun loadSongs(context: Context, minDurationMs: Long): List<Song> =
+        withContext(Dispatchers.IO) {
         val songs = mutableListOf<Song>()
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
@@ -51,14 +56,20 @@ object SongRepository {
             MediaStore.Audio.Media.MIME_TYPE,
             MediaStore.Audio.Media.IS_MUSIC
         )
-        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND " +
-            "${MediaStore.Audio.Media.DURATION} >= 3000 AND " +
-            "${MediaStore.Audio.Media.SIZE} > 0"
+        val selection = buildString {
+            append("${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ")
+            append("${MediaStore.Audio.Media.SIZE} > 0")
+            if (minDurationMs > 0L) {
+                append(" AND ${MediaStore.Audio.Media.DURATION} >= ?")
+            }
+        }
+        val selectionArgs =
+            if (minDurationMs > 0L) arrayOf(minDurationMs.toString()) else null
         val sortOrder = "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
 
         context.contentResolver.query(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-            projection, selection, null, sortOrder
+            projection, selection, selectionArgs, sortOrder
         )?.use { cursor ->
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
             val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
@@ -73,9 +84,12 @@ object SongRepository {
                 songs.add(
                     Song(
                         id = id,
-                        title = cursor.getString(titleCol) ?: "未知歌曲",
-                        artist = cursor.getString(artistCol) ?: "未知艺术家",
-                        album = cursor.getString(albumCol) ?: "未知专辑",
+                        title = cursor.getString(titleCol)
+                            ?: context.getString(com.fbc299.musicplayer.R.string.unknown_song),
+                        artist = cursor.getString(artistCol)
+                            ?: context.getString(com.fbc299.musicplayer.R.string.unknown_artist),
+                        album = cursor.getString(albumCol)
+                            ?: context.getString(com.fbc299.musicplayer.R.string.unknown_album),
                         durationMs = cursor.getLong(durCol),
                         sizeBytes = cursor.getLong(sizeCol),
                         uri = ContentUris.withAppendedId(

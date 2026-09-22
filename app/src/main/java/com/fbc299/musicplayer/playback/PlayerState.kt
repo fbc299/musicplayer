@@ -22,6 +22,15 @@ class PlayerState(val controller: MediaController) {
     var durationMs by mutableStateOf(controller.duration.coerceAtLeast(0L))
     var shuffleEnabled by mutableStateOf(controller.shuffleModeEnabled)
 
+    /** 播放队列（完整 MediaItem 列表） */
+    var mediaItems by mutableStateOf<List<MediaItem>>(controller.mediaItems)
+
+    /** 当前曲目在队列中的下标 */
+    var currentIndex by mutableStateOf(controller.currentMediaItemIndex)
+
+    /** 循环模式（Player.REPEAT_MODE_*） */
+    var repeatMode by mutableStateOf(controller.repeatMode)
+
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(value: Boolean) {
             isPlaying = value
@@ -46,6 +55,9 @@ class PlayerState(val controller: MediaController) {
         durationMs = controller.duration.coerceAtLeast(0L)
         positionMs = controller.currentPosition.coerceAtLeast(0L)
         shuffleEnabled = controller.shuffleModeEnabled
+        mediaItems = controller.mediaItems
+        currentIndex = controller.currentMediaItemIndex
+        repeatMode = controller.repeatMode
     }
 
     fun tick() {
