@@ -1,5 +1,6 @@
 package com.fbc299.musicplayer.ui.player
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
@@ -54,8 +57,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -67,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
+import coil.compose.AsyncImage
 import com.fbc299.musicplayer.R
 import com.fbc299.musicplayer.data.LrcParser
 import com.fbc299.musicplayer.data.LyricLine
@@ -78,7 +82,7 @@ import com.fbc299.musicplayer.playback.PlayerState
 import com.fbc299.musicplayer.playback.RepeatMode
 import com.fbc299.musicplayer.playback.StartPositionTicker
 import com.fbc299.musicplayer.playback.rememberPlayerState
-import com.fbc299.musicplayer.ui.CoverImage
+import com.fbc299.musicplayer.ui.LocalScrapedCovers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 
@@ -87,6 +91,15 @@ fun formatMs(ms: Long): String {
     return "%d:%02d".format(totalSec / 60, totalSec % 60)
 }
 
+/**
+ * P7 沉浸式播放页（分层，自底向上）：
+ * 1) 海报封面 fillMaxSize + Crop 铺满全屏（无封面回退深色渐变 + 音符水印）
+ * 2) 全屏半透明黑色遮罩（保证白字可读）
+ * 3) 顶部下压渐变（给返回/队列栏）
+ * 4) 底部约 45% 高度「透明 → 黑 0.85」渐变 scrim（控件悬浮其上）
+ * 5) 内容层：顶栏 / 歌词（海报中层）/ 歌名歌手专辑 + 进度条 + 控制行（底部）
+ * 6) 播放队列底部弹层
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerScreen(onClose: () -> Unit) {
@@ -108,6 +121,7 @@ fun PlayerScreen(onClose: () -> Unit) {
     ) {
         val item = state?.currentMediaItem
         if (state == null || item == null) {
+            // 无播放内容空态（保持原状）
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     text = stringResource(R.string.no_playback),
@@ -127,238 +141,327 @@ fun PlayerScreen(onClose: () -> Unit) {
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            return
-        }
+        } else {
+            val meta = item.mediaMetadata
 
-        val meta = item.mediaMetadata
-
-        // 歌词：本地曲目读同目录 .lrc；在线曲目（mediaId 前缀 "on_"）拉聚合服务歌词
-        val mediaId = item.mediaId
-        var lyricLines by remember(mediaId) { mutableStateOf<List<LyricLine>>(emptyList()) }
-        var lyricLoaded by remember(mediaId) { mutableStateOf(false) }
-        LaunchedEffect(mediaId) {
-            lyricLoaded = false
-            lyricLines = if (mediaId.startsWith(ONLINE_MEDIA_ID_PREFIX)) {
-                val rest = mediaId.removePrefix(ONLINE_MEDIA_ID_PREFIX)
-                val source = rest.substringBefore('_', "")
-                val id = rest.substringAfter('_', "")
-                if (source.isEmpty() || id.isEmpty()) {
-                    emptyList()
-                } else {
-                    val serverResult = runCatching {
-                        SettingsRepository(context).onlineSettings.first().serverUrl
+            // 歌词：本地曲目读同目录 .lrc；在线曲目（mediaId 前缀 "on_"）拉聚合服务歌词
+            val mediaId = item.mediaId
+            var lyricLines by remember(mediaId) { mutableStateOf<List<LyricLine>>(emptyList()) }
+            var lyricLoaded by remember(mediaId) { mutableStateOf(false) }
+            LaunchedEffect(mediaId) {
+                lyricLoaded = false
+                lyricLines = if (mediaId.startsWith(ONLINE_MEDIA_ID_PREFIX)) {
+                    val rest = mediaId.removePrefix(ONLINE_MEDIA_ID_PREFIX)
+                    val source = rest.substringBefore('_', "")
+                    val id = rest.substringAfter('_', "")
+                    if (source.isEmpty() || id.isEmpty()) {
+                        emptyList()
+                    } else {
+                        val serverResult = runCatching {
+                            SettingsRepository(context).onlineSettings.first().serverUrl
+                        }
+                        ensureActive()
+                        val server = serverResult.getOrNull().orEmpty()
+                        val lyricResult = if (server.isBlank()) null
+                        else runCatching { OnlineMusicSource.lyric(server, source, id) }
+                        ensureActive()
+                        val lrc = lyricResult?.getOrNull()
+                        if (lrc.isNullOrBlank()) emptyList() else LrcParser.parseLrc(lrc)
                     }
-                    ensureActive()
-                    val server = serverResult.getOrNull().orEmpty()
-                    val lyricResult = if (server.isBlank()) null
-                    else runCatching { OnlineMusicSource.lyric(server, source, id) }
-                    ensureActive()
-                    val lrc = lyricResult?.getOrNull()
-                    if (lrc.isNullOrBlank()) emptyList() else LrcParser.parseLrc(lrc)
+                } else {
+                    LrcParser.loadLyrics(context, mediaId.toLongOrNull() ?: -1L)
                 }
-            } else {
-                LrcParser.loadLyrics(context, mediaId.toLongOrNull() ?: -1L)
+                lyricLoaded = true
             }
-            lyricLoaded = true
+
+            // 播放队列弹层
+            var showQueue by remember { mutableStateOf(false) }
+
+            // ── 第 1 层：海报铺满全屏 ──
+            PosterBackground(artworkUri = meta.artworkUri, coverKey = mediaId)
+
+            // ── 第 2 层：全屏半透明黑色遮罩（可读性）──
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.35f))
+            )
+
+            // ── 第 3 层：顶部下压渐变（返回栏）──
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(140.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.5f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+
+            // ── 第 4 层：底部渐变 scrim（控件区）──
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.45f)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.85f)
+                            )
+                        )
+                    )
+            )
+
+            // ── 第 5 层：内容层（顶栏 + 歌词中层 + 底部控件）──
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+            ) {
+                // 顶栏：收起 + 播放队列入口（保留在顶部）
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onClose) {
+                        Icon(
+                            Icons.Default.KeyboardArrowDown,
+                            contentDescription = stringResource(R.string.collapse),
+                            tint = Color.White
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { showQueue = true }) {
+                        Icon(
+                            Icons.Default.QueueMusic,
+                            contentDescription = stringResource(R.string.queue),
+                            tint = Color.White
+                        )
+                    }
+                }
+
+                // 歌词区（海报中层，按进度高亮并滚动居中）
+                LyricSection(
+                    state = state,
+                    lines = lyricLines,
+                    loaded = lyricLoaded,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp)
+                )
+
+                // ── 底部控件区（悬浮于底部 scrim 上，白字）──
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // 歌名（白字，大一号）
+                    Text(
+                        text = meta.title?.toString()
+                            ?: stringResource(R.string.unknown_song),
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    // 歌手
+                    Text(
+                        text = meta.artist?.toString() ?: "",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.75f),
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                    // 专辑（有则显示）
+                    val album = meta.albumTitle?.toString()
+                    if (!album.isNullOrBlank()) {
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = album,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.55f),
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 24.dp)
+                        )
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // 进度条 + 时间
+                    SeekBar(state = state)
+
+                    Spacer(Modifier.height(4.dp))
+
+                    // 控制按钮行
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = {
+                            PlayerConnection.shuffle(!state.shuffleEnabled)
+                        }) {
+                            Icon(
+                                Icons.Default.Shuffle,
+                                contentDescription = stringResource(R.string.shuffle),
+                                tint = if (state.shuffleEnabled)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    Color.White.copy(alpha = 0.55f)
+                            )
+                        }
+                        IconButton(onClick = { PlayerConnection.previous() }) {
+                            Icon(
+                                Icons.Default.SkipPrevious,
+                                contentDescription = stringResource(R.string.previous),
+                                modifier = Modifier.size(40.dp),
+                                tint = Color.White
+                            )
+                        }
+                        // 播放/暂停 大圆钮
+                        Box(
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(RoundedCornerShape(36.dp))
+                                .background(MaterialTheme.colorScheme.primary)
+                                .clickable { PlayerConnection.togglePlay() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (state.isPlaying) Icons.Default.Pause
+                                else Icons.Default.PlayArrow,
+                                contentDescription = if (state.isPlaying)
+                                    stringResource(R.string.pause)
+                                else
+                                    stringResource(R.string.play),
+                                modifier = Modifier.size(40.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                        IconButton(onClick = { PlayerConnection.next() }) {
+                            Icon(
+                                Icons.Default.SkipNext,
+                                contentDescription = stringResource(R.string.next),
+                                modifier = Modifier.size(40.dp),
+                                tint = Color.White
+                            )
+                        }
+                        // 循环模式：关闭 → 列表循环 → 单曲循环
+                        val repeatLabel = when (state.repeatMode) {
+                            Player.REPEAT_MODE_ONE -> stringResource(R.string.repeat_one)
+                            Player.REPEAT_MODE_ALL -> stringResource(R.string.repeat_list)
+                            else -> stringResource(R.string.repeat_off)
+                        }
+                        val repeatEnabled = state.repeatMode != Player.REPEAT_MODE_OFF
+                        IconButton(onClick = {
+                            val next = PlayerConnection.cycleRepeatMode()
+                            val toast = when (next) {
+                                RepeatMode.ALL -> context.getString(R.string.repeat_list)
+                                RepeatMode.ONE -> context.getString(R.string.repeat_one)
+                                RepeatMode.OFF -> context.getString(R.string.repeat_off)
+                            }
+                            Toast.makeText(context, toast, Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(
+                                imageVector = if (state.repeatMode == Player.REPEAT_MODE_ONE)
+                                    Icons.Default.RepeatOne
+                                else
+                                    Icons.Default.Repeat,
+                                contentDescription = repeatLabel,
+                                tint = if (repeatEnabled)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    Color.White.copy(alpha = 0.55f)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(
+                    Modifier
+                        .navigationBarsPadding()
+                        .height(12.dp)
+                )
+            }
+
+            // 播放队列底部弹层
+            if (showQueue) {
+                ModalBottomSheet(
+                    onDismissRequest = { showQueue = false },
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                    containerColor = MaterialTheme.colorScheme.surface
+                ) {
+                    QueueSheet(state = state, onDismiss = { showQueue = false })
+                }
+            }
         }
+    }
+}
 
-        // 播放队列弹层
-        var showQueue by remember { mutableStateOf(false) }
+/**
+ * P7 海报层：封面 fillMaxSize + Crop 铺满全屏。
+ * 封面链路与 CoverImage 三级 fallback 一致：本地 artworkUri → 刮削 URL → 占位；
+ * 全部失败 / 无封面时回落到深色渐变 + 放大音符水印（不再绘制满屏占位图标）。
+ */
+@Composable
+private fun PosterBackground(artworkUri: Uri?, coverKey: String) {
+    val scrapedUrl = LocalScrapedCovers.current[coverKey]
+    var stage by remember(coverKey, artworkUri) { mutableIntStateOf(0) }
+    val model: Any? = when {
+        stage == 0 && artworkUri != null -> artworkUri
+        stage <= 1 && scrapedUrl != null -> scrapedUrl
+        else -> null
+    }
 
-        Column(
+    Box(modifier = Modifier.fillMaxSize()) {
+        // 占位底层：深色渐变 + 音符水印
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding(),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF1C1C1F),
+                            Color(0xFF0F0F10)
+                        )
+                    )
+                ),
+            contentAlignment = Alignment.Center
         ) {
-            // 顶栏：收起 + 播放队列入口
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onClose) {
-                    Icon(
-                        Icons.Default.KeyboardArrowDown,
-                        contentDescription = stringResource(R.string.collapse),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { showQueue = true }) {
-                    Icon(
-                        Icons.Default.QueueMusic,
-                        contentDescription = stringResource(R.string.queue),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // 大封面
-            CoverImage(
-                localModel = meta.artworkUri,
-                coverKey = mediaId,
-                modifier = Modifier
-                    .size(240.dp)
-                    .shadow(
-                        elevation = 16.dp,
-                        shape = RoundedCornerShape(24.dp),
-                        ambientColor = MaterialTheme.colorScheme.primary,
-                        spotColor = MaterialTheme.colorScheme.primary
-                    )
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-            )
-
-            Spacer(Modifier.height(20.dp))
-
-            // 歌名 + 艺术家
-            Text(
-                text = meta.title?.toString()
-                    ?: stringResource(R.string.unknown_song),
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onBackground,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 32.dp)
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = meta.artist?.toString() ?: "",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 32.dp)
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            // 歌词区域（按进度高亮并滚动居中）
-            LyricSection(
-                state = state,
-                lines = lyricLines,
-                loaded = lyricLoaded,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp)
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // 进度条
-            SeekBar(state = state)
-
-            Spacer(Modifier.height(8.dp))
-
-            // 控制按钮行
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = {
-                    PlayerConnection.shuffle(!state.shuffleEnabled)
-                }) {
-                    Icon(
-                        Icons.Default.Shuffle,
-                        contentDescription = stringResource(R.string.shuffle),
-                        tint = if (state.shuffleEnabled)
-                            MaterialTheme.colorScheme.primary
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(onClick = { PlayerConnection.previous() }) {
-                    Icon(
-                        Icons.Default.SkipPrevious,
-                        contentDescription = stringResource(R.string.previous),
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-                // 播放/暂停 大圆钮
-                Box(
-                    modifier = Modifier
-                        .size(72.dp)
-                        .clip(RoundedCornerShape(36.dp))
-                        .background(MaterialTheme.colorScheme.primary)
-                        .clickable { PlayerConnection.togglePlay() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (state.isPlaying) Icons.Default.Pause
-                        else Icons.Default.PlayArrow,
-                        contentDescription = if (state.isPlaying)
-                            stringResource(R.string.pause)
-                        else
-                            stringResource(R.string.play),
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-                IconButton(onClick = { PlayerConnection.next() }) {
-                    Icon(
-                        Icons.Default.SkipNext,
-                        contentDescription = stringResource(R.string.next),
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-                // 循环模式：关闭 → 列表循环 → 单曲循环
-                val repeatLabel = when (state.repeatMode) {
-                    Player.REPEAT_MODE_ONE -> stringResource(R.string.repeat_one)
-                    Player.REPEAT_MODE_ALL -> stringResource(R.string.repeat_list)
-                    else -> stringResource(R.string.repeat_off)
-                }
-                val repeatEnabled = state.repeatMode != Player.REPEAT_MODE_OFF
-                IconButton(onClick = {
-                    val next = PlayerConnection.cycleRepeatMode()
-                    val toast = when (next) {
-                        RepeatMode.ALL -> context.getString(R.string.repeat_list)
-                        RepeatMode.ONE -> context.getString(R.string.repeat_one)
-                        RepeatMode.OFF -> context.getString(R.string.repeat_off)
-                    }
-                    Toast.makeText(context, toast, Toast.LENGTH_SHORT).show()
-                }) {
-                    Icon(
-                        imageVector = if (state.repeatMode == Player.REPEAT_MODE_ONE)
-                            Icons.Default.RepeatOne
-                        else
-                            Icons.Default.Repeat,
-                        contentDescription = repeatLabel,
-                        tint = if (repeatEnabled)
-                            MaterialTheme.colorScheme.primary
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Spacer(
-                Modifier
-                    .navigationBarsPadding()
-                    .height(12.dp)
+            Icon(
+                imageVector = Icons.Default.MusicNote,
+                contentDescription = null,
+                modifier = Modifier.size(220.dp),
+                tint = Color.White.copy(alpha = 0.10f)
             )
         }
-
-        // 播放队列底部弹层
-        if (showQueue) {
-            ModalBottomSheet(
-                onDismissRequest = { showQueue = false },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                containerColor = MaterialTheme.colorScheme.surface
-            ) {
-                QueueSheet(state = state, onDismiss = { showQueue = false })
-            }
+        if (model != null) {
+            AsyncImage(
+                model = model,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                onError = { if (stage < 2) stage++ }
+            )
         }
     }
 }
@@ -485,8 +588,9 @@ private fun QueueSheet(state: PlayerState, onDismiss: () -> Unit) {
 }
 
 /**
- * 歌词区：无 .lrc 显示「暂无歌词」；有则按进度高亮当前行并滚动到中部。
+ * 歌词区（海报中层浮块）：无 .lrc 显示「暂无歌词」；有则按进度高亮当前行并滚动到中部。
  * 点击任意歌词行可跳转到对应时间。
+ * 海报背景上统一用白色系保证明暗主题下都可读。
  */
 @Composable
 private fun LyricSection(
@@ -500,7 +604,7 @@ private fun LyricSection(
             Text(
                 text = if (loaded) stringResource(R.string.no_lyrics) else "",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                color = Color.White.copy(alpha = 0.6f)
             )
         }
         return
@@ -533,9 +637,9 @@ private fun LyricSection(
                 fontSize = 16.sp,
                 fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (active)
-                    MaterialTheme.colorScheme.primary
+                    Color.White
                 else
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    Color.White.copy(alpha = 0.6f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -579,7 +683,7 @@ private fun SeekBar(state: PlayerState) {
             colors = SliderDefaults.colors(
                 thumbColor = MaterialTheme.colorScheme.primary,
                 activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                inactiveTrackColor = Color.White.copy(alpha = 0.25f)
             )
         )
         Row(
@@ -592,12 +696,12 @@ private fun SeekBar(state: PlayerState) {
             Text(
                 text = formatMs(shownPos),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Color.White.copy(alpha = 0.7f)
             )
             Text(
                 text = if (duration > 0) formatMs(duration) else "--:--",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Color.White.copy(alpha = 0.7f)
             )
         }
     }
