@@ -2,8 +2,10 @@ package com.fbc299.musicplayer.data
 
 import android.app.Application
 import android.util.Log
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.fbc299.musicplayer.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -132,6 +134,80 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             runCatching { settingsRepository.saveFavorites(_favorites.value) }
         }
+    }
+
+    // ——————————————————— P13 在线歌曲下载 ———————————————————
+
+    /**
+     * P13 下载进行中集合（favoriteKey）：点击先入集、结束（无论成败）出集，
+     * 同时用于防重复点击与 UI「下载中转圈」态。
+     */
+    private val _downloading = MutableStateFlow<Set<String>>(emptySet())
+    val downloading: StateFlow<Set<String>> = _downloading
+
+    /**
+     * P13 下载一首在线歌到公共 Music/格格音乐/：
+     * in-flight 防重复 → OnlineMusicSource.resolveUrl 解析直链（onlineSettings 服务器地址）
+     * → SongDownloader.save 落盘 → 成功后 load(scanSettings.value) 重扫 MediaStore
+     *   刷新本地列表（与刷新按钮同一条入口）→ Toast 结果。
+     *
+     * 本函数跑在 viewModelScope（Dispatchers.Main）上，网络/文件 IO 由被调函数自行切
+     * Dispatchers.IO，故 Toast 可直接弹（Android Toast 不需要 Compose 上下文，
+     * getApplication() 即可，文案全走 strings.xml）。
+     */
+    fun downloadOnline(song: OnlineSong) {
+        if (song.source.isEmpty() || song.sourceId.isEmpty()) return
+        val key = favoriteKey(song.source, song.sourceId)
+        // in-flight 防重复点击（StateFlow 读写都在主线程，无竞态）
+        if (_downloading.value.contains(key)) return
+        _downloading.value = _downloading.value + key
+        viewModelScope.launch {
+            try {
+                toast(R.string.download_started, song.title)
+                val server = onlineSettings.value.serverUrl
+                val directUrl = try {
+                    OnlineMusicSource.resolveUrl(server, song.source, song.sourceId)?.url
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
+                if (directUrl.isNullOrBlank()) {
+                    toast(R.string.download_resolve_failed)
+                    return@launch
+                }
+                val result = try {
+                    SongDownloader.save(getApplication(), directUrl, song.title, song.artist)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    DownloadResult.Failed(e.message ?: e.javaClass.simpleName)
+                }
+                when (result) {
+                    is DownloadResult.Saved -> {
+                        // 复用现有刷新入口：重扫 MediaStore，刚下载的歌即出现在本地列表
+                        load(scanSettings.value)
+                        toast(R.string.download_done)
+                    }
+
+                    DownloadResult.AlreadyExists -> toast(R.string.download_exists)
+
+                    is DownloadResult.Failed -> {
+                        // 原因仅记日志（含 ≤28 未授权写权限的降级），用户文案统一走 strings
+                        Log.w("LibraryViewModel", "download failed: ${result.reason}")
+                        toast(R.string.download_failed)
+                    }
+                }
+            } finally {
+                _downloading.value = _downloading.value - key
+            }
+        }
+    }
+
+    /** 下载结果 Toast（viewModelScope 主线程，getApplication() 上下文即可） */
+    private fun toast(resId: Int, vararg args: Any) {
+        val app = getApplication<Application>()
+        Toast.makeText(app, app.getString(resId, *args), Toast.LENGTH_SHORT).show()
     }
 
     // ——————————————————— P5 封面刮削 ———————————————————

@@ -107,6 +107,15 @@
     <string name="favorite_remove">取消收藏</string>
     <string name="favorites_resolved">已加入播放 %1$d 首，%2$d 首解析失败</string>
 
+    <!-- P13：在线歌曲下载 -->
+    <!-- 下载落盘子目录名（路径常量，不随语言变化） -->
+    <string name="download_sub_dir" translatable="false">格格音乐</string>
+    <string name="download_started">开始下载：%1$s</string>
+    <string name="download_done">已下载到 Music/格格音乐</string>
+    <string name="download_exists">本地已存在，无需重复下载</string>
+    <string name="download_failed">下载失败，请稍后重试</string>
+    <string name="download_resolve_failed">获取下载地址失败</string>
+
     <!-- P9：封面刮削进度 -->
     <string name="scrape_status">封面刮削：成功 %1$d · 失败 %2$d / 共 %3$d</string>
     <string name="scrape_status_running">封面刮削中… 已处理 %1$d/%2$d</string>
