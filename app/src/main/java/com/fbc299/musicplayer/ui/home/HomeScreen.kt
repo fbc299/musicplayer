@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
@@ -646,6 +647,14 @@ private fun MiniPlayer(
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
+            // P14 可发现性：曲目信息 weight(1f) 保证单行不换行，
+            // 播放键右侧上拉 chevron 明示「点我展开播放页」（整条仍由外层 clickable 承接）
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowUp,
+                contentDescription = stringResource(R.string.now_playing),
+                modifier = Modifier.size(22.dp),
+                tint = Color.White.copy(alpha = 0.55f)
+            )
         }
     }
 }
