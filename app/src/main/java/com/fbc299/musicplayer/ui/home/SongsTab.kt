@@ -299,7 +299,7 @@ private fun SectionHeader(title: String, count: Int?) {
             Text(
                 text = "$count",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.Color.White.copy(alpha = 0.55f)
+                color = Color.White.copy(alpha = 0.55f)
             )
         }
     }
