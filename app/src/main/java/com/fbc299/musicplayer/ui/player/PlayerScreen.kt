@@ -2,6 +2,7 @@ package com.fbc299.musicplayer.ui.player
 
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -107,6 +108,10 @@ fun formatMs(ms: Long): String {
 @Composable
 fun PlayerScreen(onClose: () -> Unit) {
     val state = rememberPlayerState()
+    // P11：播放页是覆盖层（MainActivity 仅在 playerOpen 时组合它），系统返回必须被本页消费，
+    // 否则无人处理 → Activity finish = 整个 App 退出。这里改为「收起」：回主界面，播放不中断；
+    // 主界面再按返回才是系统默认的退出。
+    BackHandler { onClose() }
     StartPositionTicker(state)
     val context = LocalContext.current
 
