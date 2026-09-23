@@ -74,32 +74,73 @@ fun SongsTab(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        SearchField(query = query, onQueryChange = onQueryChange)
-        when {
-            query.isNotBlank() -> SearchContent(
-                local = filtered,
-                onlineActive = onlineActive,
-                onlineResults = onlineResults,
-                onlineLoading = onlineLoading,
-                onlineError = onlineError,
-                currentMediaId = currentMediaId,
-                resolvingOnlineId = resolvingOnlineId,
-                onLocalSongClick = { song ->
-                    // 索引换回全量列表，保证播放的正是被点击的那首（过滤视图下标≠全量下标）
-                    val fullIndex = songs.indexOfFirst { it.id == song.id }
-                    if (fullIndex >= 0) onSongClick(fullIndex)
-                },
-                onOnlineClick = onOnlineClick
-            )
-
-            filtered.isEmpty() -> EmptyLibrary()
-            else -> SongList(
-                songs = filtered,
-                currentMediaId = currentMediaId,
-                onSongClick = onSongClick
+    Box(modifier = Modifier.fillMaxSize()) {
+        // 沉浸锚点（同播放页无图回退）：深色渐变 + 音符水印，压在标题/搜索条与列表区背后
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(260.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF1C1C1F),
+                            Color.Transparent
+                        )
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.MusicNote,
+                contentDescription = null,
+                modifier = Modifier.size(220.dp),
+                tint = Color.White.copy(alpha = 0.10f)
             )
         }
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            SearchField(query = query, onQueryChange = onQueryChange)
+            when {
+                query.isNotBlank() -> SearchContent(
+                    local = filtered,
+                    onlineActive = onlineActive,
+                    onlineResults = onlineResults,
+                    onlineLoading = onlineLoading,
+                    onlineError = onlineError,
+                    currentMediaId = currentMediaId,
+                    resolvingOnlineId = resolvingOnlineId,
+                    onLocalSongClick = { song ->
+                        // 索引换回全量列表，保证播放的正是被点击的那首（过滤视图下标≠全量下标）
+                        val fullIndex = songs.indexOfFirst { it.id == song.id }
+                        if (fullIndex >= 0) onSongClick(fullIndex)
+                    },
+                    onOnlineClick = onOnlineClick
+                )
+
+                filtered.isEmpty() -> EmptyLibrary()
+                else -> SongList(
+                    songs = filtered,
+                    currentMediaId = currentMediaId,
+                    onSongClick = onSongClick
+                )
+            }
+        }
+
+        // 底部 scrim：贴 mini player/底栏上方，透明 → 黑 0.85 压底
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(104.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.85f)
+                        )
+                    )
+                )
+        )
     }
 }
 
@@ -136,10 +177,19 @@ private fun SearchField(
         singleLine = true,
         shape = RoundedCornerShape(24.dp),
         colors = OutlinedTextFieldDefaults.colors(
+            focusedTextColor = Color.White,
+            unfocusedTextColor = Color.White,
+            cursorColor = MaterialTheme.colorScheme.primary,
             focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant,
-            focusedContainerColor = MaterialTheme.colorScheme.surface,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surface
+            unfocusedBorderColor = Color.White.copy(alpha = 0.25f),
+            focusedContainerColor = Color.Black.copy(alpha = 0.35f),
+            unfocusedContainerColor = Color.Black.copy(alpha = 0.25f),
+            focusedPlaceholderColor = Color.White.copy(alpha = 0.55f),
+            unfocusedPlaceholderColor = Color.White.copy(alpha = 0.55f),
+            focusedLeadingIconColor = Color.White.copy(alpha = 0.75f),
+            unfocusedLeadingIconColor = Color.White.copy(alpha = 0.55f),
+            focusedTrailingIconColor = Color.White.copy(alpha = 0.75f),
+            unfocusedTrailingIconColor = Color.White.copy(alpha = 0.75f)
         )
     )
 }
@@ -201,7 +251,7 @@ private fun SearchContent(
                         Text(
                             text = stringResource(R.string.online_loading),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = Color.White.copy(alpha = 0.75f)
                         )
                     }
                 }
@@ -249,7 +299,7 @@ private fun SectionHeader(title: String, count: Int?) {
             Text(
                 text = "$count",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                color = MaterialTheme.colorScheme.Color.White.copy(alpha = 0.55f)
             )
         }
     }
@@ -260,7 +310,7 @@ private fun MessageText(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = Color.White.copy(alpha = 0.55f),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp)
@@ -294,14 +344,14 @@ private fun OnlineSongRow(
             modifier = Modifier
                 .size(48.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(Color(0xFF1C1C1F)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 Icons.Default.Cloud,
                 contentDescription = null,
                 modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                tint = Color.White.copy(alpha = 0.35f)
             )
             if (song.artworkUrl != null) {
                 AsyncImage(
@@ -322,7 +372,7 @@ private fun OnlineSongRow(
                 color = if (isCurrent)
                     MaterialTheme.colorScheme.primary
                 else
-                    MaterialTheme.colorScheme.onBackground,
+                    Color.White,
                 fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal
             )
             val subline = listOf(song.artist, song.album)
@@ -333,7 +383,7 @@ private fun OnlineSongRow(
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Color.White.copy(alpha = 0.55f)
             )
         }
         Spacer(Modifier.width(8.dp))
@@ -347,20 +397,20 @@ private fun OnlineSongRow(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .background(Color.White.copy(alpha = 0.12f))
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
                 Icon(
                     Icons.Default.Cloud,
                     contentDescription = null,
                     modifier = Modifier.size(12.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    tint = Color.White.copy(alpha = 0.75f)
                 )
                 Spacer(Modifier.width(3.dp))
                 Text(
                     text = sourceLabel,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = Color.White.copy(alpha = 0.75f)
                 )
             }
         }
@@ -417,7 +467,7 @@ private fun SongRow(
                 color = if (isCurrent)
                     MaterialTheme.colorScheme.primary
                 else
-                    MaterialTheme.colorScheme.onBackground,
+                    Color.White,
                 fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal
             )
             Text(
@@ -425,14 +475,14 @@ private fun SongRow(
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Color.White.copy(alpha = 0.55f)
             )
         }
         Spacer(Modifier.width(8.dp))
         Text(
             text = song.formattedDuration,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = Color.White.copy(alpha = 0.55f)
         )
     }
 }
@@ -443,7 +493,7 @@ fun SongCover(song: Song, size: Dp) {
         modifier = Modifier
             .size(size)
             .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(Color(0xFF1C1C1F)),
         contentAlignment = Alignment.Center
     ) {
         CoverImage(
@@ -465,19 +515,19 @@ fun EmptyLibrary() {
             Icons.Default.MusicNote,
             contentDescription = null,
             modifier = Modifier.size(72.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+            tint = Color.White.copy(alpha = 0.55f)
         )
         Spacer(Modifier.height(16.dp))
         Text(
             text = stringResource(R.string.empty_library),
             style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onBackground
+            color = Color.White
         )
         Spacer(Modifier.height(8.dp))
         Text(
             text = stringResource(R.string.empty_hint),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = Color.White.copy(alpha = 0.55f)
         )
     }
 }
