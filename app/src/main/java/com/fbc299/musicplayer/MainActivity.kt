@@ -18,8 +18,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.MediaItem
+import com.fbc299.musicplayer.R
 import com.fbc299.musicplayer.data.LibraryViewModel
+import com.fbc299.musicplayer.data.ONLINE_MEDIA_ID_PREFIX
+import com.fbc299.musicplayer.data.OnlineSong
+import com.fbc299.musicplayer.data.favoriteKey
 import com.fbc299.musicplayer.playback.PlayerConnection
+import com.fbc299.musicplayer.playback.rememberPlayerState
 import com.fbc299.musicplayer.ui.LocalScrapedCovers
 import com.fbc299.musicplayer.ui.home.HomeScreen
 import com.fbc299.musicplayer.ui.player.PlayerScreen
@@ -59,7 +65,24 @@ class MainActivity : ComponentActivity() {
                         ) {
                             HomeScreen(onOpenPlayer = { playerOpen = true })
                             if (playerOpen) {
-                                PlayerScreen(onClose = { playerOpen = false })
+                                // P12 播放页顶栏爱心：仅在线曲（mediaId 前缀 on_）显示；
+                                // 本地曲 onlineSongOf 返回 null → favorite/onToggleFavorite 传 null 不显示
+                                val playerState = rememberPlayerState()
+                                val favoriteKeys by libraryViewModel.favoriteKeys.collectAsState()
+                                val currentOnline = onlineSongOf(playerState?.currentMediaItem)
+                                val favorite: Boolean? = currentOnline?.let { song ->
+                                    favoriteKeys.contains(
+                                        favoriteKey(song.source, song.sourceId)
+                                    )
+                                }
+                                val onToggleFavorite: (() -> Unit)? = currentOnline?.let { song ->
+                                    { libraryViewModel.toggleFavorite(song) }
+                                }
+                                PlayerScreen(
+                                    onClose = { playerOpen = false },
+                                    favorite = favorite,
+                                    onToggleFavorite = onToggleFavorite
+                                )
                             }
                         }
                     }
@@ -75,4 +98,30 @@ class MainActivity : ComponentActivity() {
     private fun audioPermission(): String =
         if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
         else Manifest.permission.READ_EXTERNAL_STORAGE
+}
+
+/**
+ * P12 收藏：在线曲（mediaId 前缀 on_）→ OnlineSong（播放页顶栏爱心的收藏对象）。
+ * 本地曲 / 解析不出 source 或 id 时返回 null —— 爱心随之不显示（本轮只收藏在线歌）。
+ * title/artist/album/封面取自播放元数据（即当初 OnlineSong.toMediaItem 写入的值）；
+ * picId 置空：它只用于本地曲封面刮削，收藏曲展示直接用 artworkUrl。
+ * mediaId 解析口径与播放页歌词加载处一致（removePrefix("on_") 后 前段=source 后段=id）。
+ */
+private fun onlineSongOf(item: MediaItem?): OnlineSong? {
+    val mediaId = item?.mediaId ?: return null
+    if (!mediaId.startsWith(ONLINE_MEDIA_ID_PREFIX)) return null
+    val rest = mediaId.removePrefix(ONLINE_MEDIA_ID_PREFIX)
+    val source = rest.substringBefore('_', "")
+    val id = rest.substringAfter('_', "")
+    if (source.isEmpty() || id.isEmpty()) return null
+    val meta = item.mediaMetadata
+    return OnlineSong(
+        source = source,
+        sourceId = id,
+        title = meta.title?.toString() ?: "",
+        artist = meta.artist?.toString() ?: "",
+        album = meta.albumTitle?.toString() ?: "",
+        artworkUrl = meta.artworkUri?.toString(),
+        picId = null
+    )
 }

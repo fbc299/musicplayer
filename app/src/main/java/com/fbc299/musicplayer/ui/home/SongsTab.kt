@@ -19,8 +19,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,13 +48,18 @@ import coil.compose.AsyncImage
 import com.fbc299.musicplayer.R
 import com.fbc299.musicplayer.data.OnlineSong
 import com.fbc299.musicplayer.data.Song
+import com.fbc299.musicplayer.data.favoriteKey
 import com.fbc299.musicplayer.ui.CoverImage
 
 /**
  * 歌曲 Tab：顶部搜索栏 + 列表。
- * - 搜索词为空：本地全量列表；
+ * - 搜索词为空：本地全量列表（P12 起若已有收藏，其上方多一段「收藏」）；
  * - 搜索词非空：分段显示 —— 第一段「本地」匹配结果，第二段「在线」聚合搜索结果
- *   （在线段仅在 设置→在线音源 开启且服务器地址非空 时出现）。
+ *   （在线段仅在 设置→在线音源 开启且服务器地址非空 时出现），
+ *   第三段「收藏」P12 新增（收藏越早越靠前，段头带「播放全部」）。
+ *
+ * P12 收藏：在线行/收藏行尾部爱心 toggle，收藏行点击走与在线行**同一个** onOnlineClick
+ *（含 P9 试听换源的点播流程，由 HomeScreen 传入，不在此处复制解析逻辑）。
  */
 @Composable
 fun SongsTab(
@@ -65,7 +73,11 @@ fun SongsTab(
     onlineLoading: Boolean,
     onlineError: Boolean,
     resolvingOnlineId: String?,
-    onOnlineClick: (OnlineSong) -> Unit
+    onOnlineClick: (OnlineSong) -> Unit,
+    favorites: List<OnlineSong>,
+    favoriteKeys: Set<String>,
+    onToggleFavorite: (OnlineSong) -> Unit,
+    onPlayFavorites: () -> Unit
 ) {
     val filtered = remember(songs, query) {
         if (query.isBlank()) songs
@@ -111,19 +123,36 @@ fun SongsTab(
                     onlineError = onlineError,
                     currentMediaId = currentMediaId,
                     resolvingOnlineId = resolvingOnlineId,
+                    favorites = favorites,
+                    favoriteKeys = favoriteKeys,
                     onLocalSongClick = { song ->
                         // 索引换回全量列表，保证播放的正是被点击的那首（过滤视图下标≠全量下标）
                         val fullIndex = songs.indexOfFirst { it.id == song.id }
                         if (fullIndex >= 0) onSongClick(fullIndex)
                     },
-                    onOnlineClick = onOnlineClick
+                    onOnlineClick = onOnlineClick,
+                    onToggleFavorite = onToggleFavorite,
+                    onPlayFavorites = onPlayFavorites
                 )
 
-                filtered.isEmpty() -> EmptyLibrary()
-                else -> SongList(
+                // P12：无收藏时与原行为完全一致（空库空态 / 本地全量列表）
+                favorites.isEmpty() -> if (filtered.isEmpty()) EmptyLibrary()
+                else SongList(
                     songs = filtered,
                     currentMediaId = currentMediaId,
                     onSongClick = onSongClick
+                )
+
+                // P12：搜索词为空但已有收藏 —— 「收藏」分段在上，本地全量列表在下
+                else -> SongListWithFavorites(
+                    favorites = favorites,
+                    local = filtered,
+                    currentMediaId = currentMediaId,
+                    resolvingOnlineId = resolvingOnlineId,
+                    onOnlineClick = onOnlineClick,
+                    onToggleFavorite = onToggleFavorite,
+                    onPlayFavorites = onPlayFavorites,
+                    onLocalClick = onSongClick
                 )
             }
         }
@@ -196,7 +225,7 @@ private fun SearchField(
     )
 }
 
-// ————————————————————— 搜索结果分段（本地 / 在线） —————————————————————
+// ————————————————————— 搜索结果分段（本地 / 在线 / 收藏） —————————————————————
 
 @Composable
 private fun SearchContent(
@@ -207,8 +236,12 @@ private fun SearchContent(
     onlineError: Boolean,
     currentMediaId: String?,
     resolvingOnlineId: String?,
+    favorites: List<OnlineSong>,
+    favoriteKeys: Set<String>,
     onLocalSongClick: (Song) -> Unit,
-    onOnlineClick: (OnlineSong) -> Unit
+    onOnlineClick: (OnlineSong) -> Unit,
+    onToggleFavorite: (OnlineSong) -> Unit,
+    onPlayFavorites: () -> Unit
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         // —— 第一段：本地 ——
@@ -271,9 +304,39 @@ private fun SearchContent(
                         song = song,
                         isCurrent = song.mediaId == currentMediaId,
                         resolving = song.mediaId == resolvingOnlineId,
-                        onClick = { onOnlineClick(song) }
+                        onClick = { onOnlineClick(song) },
+                        favorite = favoriteKeys.contains(
+                            favoriteKey(song.source, song.sourceId)
+                        ),
+                        onToggleFavorite = { onToggleFavorite(song) }
                     )
                 }
+            }
+        }
+
+        // —— 第三段：收藏（P12；复用在线行与同一条 onOnlineClick 点播流程）——
+        item(key = "h_fav") {
+            SectionHeader(
+                title = stringResource(R.string.favorites),
+                count = favorites.size,
+                onPlayAll = if (favorites.isNotEmpty()) onPlayFavorites else null
+            )
+        }
+        if (favorites.isEmpty()) {
+            item(key = "fav_empty") {
+                FavoritesEmpty()
+            }
+        } else {
+            items(favorites, key = { favoriteKey(it.source, it.sourceId) }) { song ->
+                OnlineSongRow(
+                    song = song,
+                    isCurrent = song.mediaId == currentMediaId,
+                    resolving = song.mediaId == resolvingOnlineId,
+                    // 与在线段同一入口：HomeScreen 的点播 lambda（含 P9 试听换源）
+                    onClick = { onOnlineClick(song) },
+                    favorite = true,
+                    onToggleFavorite = { onToggleFavorite(song) }
+                )
             }
         }
 
@@ -281,9 +344,57 @@ private fun SearchContent(
     }
 }
 
-/** 分段小标题：「本地 12」「在线 20」 */
+/**
+ * P12 搜索词为空时的默认视图：「收藏」分段（含段头播放全部）在上，本地全量列表在下。
+ * 收藏行点击同样走 onOnlineClick —— 与搜索结果里的在线行是同一个点播流程。
+ */
 @Composable
-private fun SectionHeader(title: String, count: Int?) {
+private fun SongListWithFavorites(
+    favorites: List<OnlineSong>,
+    local: List<Song>,
+    currentMediaId: String?,
+    resolvingOnlineId: String?,
+    onOnlineClick: (OnlineSong) -> Unit,
+    onToggleFavorite: (OnlineSong) -> Unit,
+    onPlayFavorites: () -> Unit,
+    onLocalClick: (Int) -> Unit
+) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item(key = "h_fav") {
+            SectionHeader(
+                title = stringResource(R.string.favorites),
+                count = favorites.size,
+                onPlayAll = onPlayFavorites
+            )
+        }
+        items(favorites, key = { favoriteKey(it.source, it.sourceId) }) { song ->
+            OnlineSongRow(
+                song = song,
+                isCurrent = song.mediaId == currentMediaId,
+                resolving = song.mediaId == resolvingOnlineId,
+                onClick = { onOnlineClick(song) },
+                favorite = true,
+                onToggleFavorite = { onToggleFavorite(song) }
+            )
+        }
+        // 收藏段之上加了分段头，本地段也补一个头，避免两段视觉黏连
+        item(key = "h_local") {
+            SectionHeader(title = stringResource(R.string.section_local), count = local.size)
+        }
+        items(local.withIndex().toList(), key = { it.value.id }) { (index, song) ->
+            SongRow(
+                song = song,
+                isCurrent = song.id.toString() == currentMediaId,
+                onClick = { onLocalClick(index) }
+            )
+        }
+        item(key = "bottom_spacer") { Spacer(Modifier.height(8.dp)) }
+    }
+}
+
+/** 分段小标题：「本地 12」「在线 20」；P12 收藏段在尾部追加「播放全部」按钮 */
+@Composable
+private fun SectionHeader(title: String, count: Int?, onPlayAll: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -304,6 +415,53 @@ private fun SectionHeader(title: String, count: Int?) {
                 color = Color.White.copy(alpha = 0.55f)
             )
         }
+        if (onPlayAll != null) {
+            Spacer(Modifier.weight(1f))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClick = onPlayAll)
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(2.dp))
+                Text(
+                    text = stringResource(R.string.play_all),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
+/** P12 收藏分段空态：音符水印 + 「还没有收藏」提示 */
+@Composable
+private fun FavoritesEmpty() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            Icons.Default.MusicNote,
+            contentDescription = null,
+            modifier = Modifier.size(56.dp),
+            tint = Color.White.copy(alpha = 0.10f)
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.favorites_empty),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.55f)
+        )
     }
 }
 
@@ -319,13 +477,16 @@ private fun MessageText(text: String) {
     )
 }
 
-/** 在线搜索结果行：封面（缺图回退云朵）+ 歌名/歌手/专辑 + 来源标；解析直链时显示进度 */
+/** 在线搜索结果行：封面（缺图回退云朵）+ 歌名/歌手/专辑 + 来源标；解析直链时显示进度。
+ *  P12 尾部追加收藏爱心：图标自身的 clickable 先消费点按，不会冒泡触发行的点播。 */
 @Composable
 private fun OnlineSongRow(
     song: OnlineSong,
     isCurrent: Boolean,
     resolving: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    favorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null
 ) {
     val sourceLabel = when (song.source) {
         "migu" -> stringResource(R.string.source_migu)
@@ -413,6 +574,24 @@ private fun OnlineSongRow(
                     text = sourceLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White.copy(alpha = 0.75f)
+                )
+            }
+        }
+        // P12 收藏爱心（来源标之后）：未藏 FavoriteBorder 白55，已藏 Favorite primary 实心
+        if (onToggleFavorite != null) {
+            Spacer(Modifier.width(4.dp))
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    imageVector = if (favorite) Icons.Filled.Favorite
+                    else Icons.Outlined.FavoriteBorder,
+                    contentDescription = stringResource(
+                        if (favorite) R.string.favorite_remove else R.string.favorite_add
+                    ),
+                    modifier = Modifier.size(22.dp),
+                    tint = if (favorite)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        Color.White.copy(alpha = 0.55f)
                 )
             }
         }

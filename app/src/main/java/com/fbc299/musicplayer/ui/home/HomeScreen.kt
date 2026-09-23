@@ -66,11 +66,18 @@ import com.fbc299.musicplayer.playback.PlayerState
 import com.fbc299.musicplayer.playback.StartPositionTicker
 import com.fbc299.musicplayer.playback.rememberPlayerState
 import com.fbc299.musicplayer.ui.CoverImage
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /** 底部导航四个 Tab */
 enum class HomeTab { SONGS, ALBUMS, ARTISTS, SETTINGS }
+
+/** P12 收藏「播放全部」：直链解析并发度上限（聚合服务单机，压太高易被限流） */
+private const val FAVORITES_RESOLVE_CONCURRENCY = 4
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,6 +99,9 @@ fun HomeScreen(
     val onlineError by libraryViewModel.onlineError.collectAsState()
     // P9 刮削进度（设置页展示）
     val scrapeStatus by libraryViewModel.scrapeStatus.collectAsState()
+    // P12 收藏（列表 + 去重键集合）
+    val favorites by libraryViewModel.favorites.collectAsState()
+    val favoriteKeys by libraryViewModel.favoriteKeys.collectAsState()
     val playerState = rememberPlayerState()
     StartPositionTicker(playerState)
 
@@ -176,6 +186,65 @@ fun HomeScreen(
                     // mediaId / 封面 / 歌词都跟着 chosen（换源后自然是新 source 的条目）
                     PlayerConnection.playOnline(listOf(chosen.toMediaItem(directUrl)), 0)
                     onOpenPlayer()
+                }
+            }
+        }
+    }
+
+    // P12 播放全部进行中标记（防连点把收藏列表重复插入队列）
+    var favoritesPlaying by remember { mutableStateOf(false) }
+
+    /**
+     * P12 收藏「播放全部」：并发解析直链（Semaphore 限并发 ≤4，保持收藏顺序），
+     * 成功的条目走现有插入式点播 PlayerConnection.playOnline（插入当前曲目下一位）。
+     * 全部失败 → 既有失败文案；否则一条新 Toast 报「成功 N 首 / 失败 M 首」。
+     * 注：逐首不走 P9 试听换源（并发下逐首换源请求数会成倍放大），解析失败即计失败。
+     */
+    val onPlayFavorites: () -> Unit = {
+        val targets = favorites
+        if (targets.isNotEmpty() && onlineActive && !favoritesPlaying) {
+            favoritesPlaying = true
+            onlineScope.launch {
+                try {
+                    val semaphore = Semaphore(FAVORITES_RESOLVE_CONCURRENCY)
+                    val resolvedItems = targets.map { song ->
+                        async {
+                            semaphore.withPermit {
+                                val directUrl = runCatching {
+                                    OnlineMusicSource.getUrl(
+                                        onlineSettings.serverUrl,
+                                        song.source,
+                                        song.sourceId
+                                    )
+                                }.getOrNull()
+                                if (directUrl.isNullOrBlank()) null
+                                else song.toMediaItem(directUrl)
+                            }
+                        }
+                    }.awaitAll().filterNotNull()
+                    val failed = targets.size - resolvedItems.size
+                    if (resolvedItems.isEmpty()) {
+                        // 全部解析失败：沿用既有失败文案
+                        Toast.makeText(
+                            appContext,
+                            appContext.getString(R.string.online_url_failed),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        PlayerConnection.playOnline(resolvedItems, 0)
+                        onOpenPlayer()
+                        Toast.makeText(
+                            appContext,
+                            appContext.getString(
+                                R.string.favorites_resolved,
+                                resolvedItems.size,
+                                failed
+                            ),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                } finally {
+                    favoritesPlaying = false
                 }
             }
         }
@@ -300,7 +369,11 @@ fun HomeScreen(
                     onlineLoading = onlineLoading,
                     onlineError = onlineError,
                     resolvingOnlineId = resolvingOnlineId,
-                    onOnlineClick = onOnlineClick
+                    onOnlineClick = onOnlineClick,
+                    favorites = favorites,
+                    favoriteKeys = favoriteKeys,
+                    onToggleFavorite = { song -> libraryViewModel.toggleFavorite(song) },
+                    onPlayFavorites = onPlayFavorites
                 )
 
                 tab == HomeTab.ALBUMS -> {

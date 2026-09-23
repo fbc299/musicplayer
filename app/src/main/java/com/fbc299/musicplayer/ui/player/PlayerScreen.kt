@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -112,7 +114,16 @@ fun formatMs(ms: Long): String {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlayerScreen(onClose: () -> Unit) {
+fun PlayerScreen(
+    onClose: () -> Unit,
+    /**
+     * P12 收藏爱心：favorite = 当前曲是否已收藏（null = 本地曲/无法判定）；
+     * onToggleFavorite = 切换回调（null = 本地曲，不显示爱心）。
+     * 两者由组合方（MainActivity）按 mediaId 前缀 on_ 判定后传入。
+     */
+    favorite: Boolean? = null,
+    onToggleFavorite: (() -> Unit)? = null
+) {
     val state = rememberPlayerState()
     // P11：播放页是覆盖层（MainActivity 仅在 playerOpen 时组合它），系统返回必须被本页消费，
     // 否则无人处理 → Activity finish = 整个 App 退出。这里改为「收起」：回主界面，播放不中断；
@@ -239,7 +250,7 @@ fun PlayerScreen(onClose: () -> Unit) {
                     .fillMaxSize()
                     .statusBarsPadding()
             ) {
-                // 顶栏：收起 + 播放队列入口（保留在顶部）
+                // 顶栏：收起 + 收藏爱心（P12，仅在线曲显示）+ 播放队列入口
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -254,6 +265,23 @@ fun PlayerScreen(onClose: () -> Unit) {
                         )
                     }
                     Spacer(Modifier.weight(1f))
+                    // P12 收藏爱心：本地曲 favorite/onToggleFavorite 传 null → 整块不显示
+                    if (favorite != null && onToggleFavorite != null) {
+                        IconButton(onClick = onToggleFavorite) {
+                            Icon(
+                                imageVector = if (favorite) Icons.Filled.Favorite
+                                else Icons.Outlined.FavoriteBorder,
+                                contentDescription = stringResource(
+                                    if (favorite) R.string.favorite_remove
+                                    else R.string.favorite_add
+                                ),
+                                tint = if (favorite)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    Color.White.copy(alpha = 0.55f)
+                            )
+                        }
+                    }
                     IconButton(onClick = { showQueue = true }) {
                         Icon(
                             Icons.Default.QueueMusic,

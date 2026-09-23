@@ -100,6 +100,13 @@
     <string name="scraper_enabled">自动刮削封面</string>
     <string name="scraper_enabled_desc">在线音源开启时，为本地歌曲联网补全封面（复用同一服务器地址）</string>
 
+    <!-- P12：收藏 -->
+    <string name="favorites">收藏</string>
+    <string name="favorites_empty">还没有收藏，在线歌曲点 ♡ 加入</string>
+    <string name="favorite_add">收藏</string>
+    <string name="favorite_remove">取消收藏</string>
+    <string name="favorites_resolved">已加入播放 %1$d 首，%2$d 首解析失败</string>
+
     <!-- P9：封面刮削进度 -->
     <string name="scrape_status">封面刮削：成功 %1$d · 失败 %2$d / 共 %3$d</string>
     <string name="scrape_status_running">封面刮削中… 已处理 %1$d/%2$d</string>
