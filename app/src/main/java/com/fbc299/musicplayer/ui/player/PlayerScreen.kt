@@ -4,6 +4,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,7 +65,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -85,6 +85,7 @@ import com.fbc299.musicplayer.playback.RepeatMode
 import com.fbc299.musicplayer.playback.StartPositionTicker
 import com.fbc299.musicplayer.playback.rememberPlayerState
 import com.fbc299.musicplayer.ui.LocalScrapedCovers
+import kotlin.math.abs
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 
@@ -633,7 +634,6 @@ private fun LyricSection(
             }
         } else {
             val listState = rememberLazyListState()
-            val density = LocalDensity.current
             var viewportHeight by remember { mutableIntStateOf(0) }
 
             // 高亮判定用「进度 + 手动偏移」：偏移为正 → effective 更大 → 歌词行更早点亮（提前）
@@ -678,15 +678,26 @@ private fun LyricSection(
             }
 
             // 当前行滚动到歌词区中部
+            // 旧 bug：animateScrollToItem 的 scrollOffset 官方语义是「正数=向前滚=把 item
+            // 进一步上移」，曾传入半屏正数，导致正在播放的高亮行被顶出屏幕上沿；
+            // 且行高硬编码 34dp，歌词换行时（60-80dp）居中必然偏。
+            // 现改为：先粗定位到视口内，再用 layoutInfo 的真实 item 几何计算 delta，
+            // animateScrollBy（正数=内容上移）把「当前行中心」精确滚到「视口中心」。
             LaunchedEffect(currentLineIndex, viewportHeight) {
-                if (currentLineIndex >= 0 &&
-                    viewportHeight > 0 &&
-                    currentLineIndex < listState.layoutInfo.totalItemsCount
-                ) {
-                    val linePx = with(density) { 34.dp.toPx() }.toInt()
-                    val offset = (viewportHeight / 2 - linePx / 2).coerceAtLeast(0)
-                    listState.animateScrollToItem(currentLineIndex, offset)
+                if (currentLineIndex < 0 || viewportHeight <= 0) return@LaunchedEffect
+
+                // 1) 目标不在视口内 → 先粗定位到顶部（挂起返回后 layoutInfo 已更新）
+                if (listState.layoutInfo.visibleItemsInfo.none { it.index == currentLineIndex }) {
+                    listState.animateScrollToItem(currentLineIndex)
                 }
+
+                // 2) 用真实 item 尺寸把「当前行中心」滚到「视口中心」
+                //    scrollBy/animateScrollBy 语义：正数 = 向前 = 内容上移
+                val item = listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.index == currentLineIndex }
+                    ?: return@LaunchedEffect
+                val delta = (item.offset + item.size / 2f) - viewportHeight / 2f
+                if (abs(delta) > 1f) listState.animateScrollBy(delta)
             }
         }
     }
