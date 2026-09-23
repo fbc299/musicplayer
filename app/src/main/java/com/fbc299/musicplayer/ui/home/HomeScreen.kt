@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,7 +24,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -441,14 +441,42 @@ private fun MiniPlayer(
 ) {
     val item = playerState?.currentMediaItem ?: return
     val meta = item.mediaMetadata
+    val duration = playerState.durationMs
+    val progress = if (duration > 0)
+        playerState.positionMs.toFloat() / duration
+    else 0f
 
-    Column {
-        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+    // 黑 0.85 玻璃条：顶部渐变进度条 + 白字曲目信息 + primary 播放键
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.85f))
+    ) {
+        // 顶部进度条（与播放页进度同源：primary → 白 渐变）
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(Color.White.copy(alpha = 0.15f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(progress.coerceIn(0f, 1f))
+                    .height(2.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.primary,
+                                Color.White.copy(alpha = 0.9f)
+                            )
+                        )
+                    )
+            )
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onOpenPlayer)
-                .background(MaterialTheme.colorScheme.surface)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -456,7 +484,7 @@ private fun MiniPlayer(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(Color(0xFF1C1C1F)),
                 contentAlignment = Alignment.Center
             ) {
                 CoverImage(
@@ -473,14 +501,14 @@ private fun MiniPlayer(
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = Color.White
                 )
                 Text(
                     text = meta.artist?.toString() ?: "",
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = Color.White.copy(alpha = 0.75f)
                 )
             }
             IconButton(onClick = { PlayerConnection.togglePlay() }) {
