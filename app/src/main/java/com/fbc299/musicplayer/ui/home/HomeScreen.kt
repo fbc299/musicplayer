@@ -45,6 +45,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -148,6 +150,16 @@ fun HomeScreen(
     val currentMediaId = playerState?.currentMediaItem?.mediaId
 
     Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF1C1C1F),
+                        Color(0xFF0F0F10)
+                    )
+                )
+            ),
         topBar = {
             when {
                 selectedAlbum != null -> DetailBar(
@@ -181,11 +193,11 @@ fun HomeScreen(
                 )
             }
         },
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         bottomBar = {
             Column {
                 MiniPlayer(playerState = playerState, onOpenPlayer = onOpenPlayer)
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                NavigationBar(containerColor = Color.Black.copy(alpha = 0.85f)) {
                     NavigationBarItem(
                         selected = tab == HomeTab.SONGS,
                         onClick = { switchTab(HomeTab.SONGS) },
@@ -326,61 +338,100 @@ fun HomeScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TitleBar(title: String, onRefresh: (() -> Unit)?) {
-    TopAppBar(
-        title = { Text(text = title, fontWeight = FontWeight.Bold) },
-        actions = {
-            if (onRefresh != null) {
-                IconButton(onClick = onRefresh) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = stringResource(R.string.refresh)
+    Box(modifier = Modifier.fillMaxWidth()) {
+        // 顶部下压渐变（同播放页顶栏），压在标题区底下
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.5f),
+                            Color.Transparent
+                        )
                     )
-                }
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.background,
-            titleContentColor = MaterialTheme.colorScheme.onBackground,
-            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
         )
-    )
+        TopAppBar(
+            title = {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            },
+            actions = {
+                if (onRefresh != null) {
+                    IconButton(onClick = onRefresh) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = stringResource(R.string.refresh),
+                            tint = Color.White.copy(alpha = 0.75f)
+                        )
+                    }
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent,
+                titleContentColor = Color.White,
+                actionIconContentColor = Color.White.copy(alpha = 0.75f)
+            )
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DetailBar(title: String, onBack: () -> Unit) {
-    TopAppBar(
-        title = {
-            Text(
-                text = title,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        },
-        navigationIcon = {
-            IconButton(onClick = onBack) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = stringResource(R.string.back)
+    Box(modifier = Modifier.fillMaxWidth()) {
+        // 顶部下压渐变（同播放页顶栏），压在标题区底下
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.5f),
+                            Color.Transparent
+                        )
+                    )
                 )
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.background,
-            titleContentColor = MaterialTheme.colorScheme.onBackground,
-            navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
-    )
+        TopAppBar(
+            title = {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.Default.ArrowBack,
+                        contentDescription = stringResource(R.string.back),
+                        tint = Color.White.copy(alpha = 0.75f)
+                    )
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent,
+                titleContentColor = Color.White,
+                navigationIconContentColor = Color.White.copy(alpha = 0.75f)
+            )
+        )
+    }
 }
 
 @Composable
 private fun navItemColors() = NavigationBarItemDefaults.colors(
     selectedIconColor = MaterialTheme.colorScheme.primary,
     selectedTextColor = MaterialTheme.colorScheme.primary,
-    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    indicatorColor = MaterialTheme.colorScheme.primaryContainer
+    unselectedIconColor = Color.White.copy(alpha = 0.55f),
+    unselectedTextColor = Color.White.copy(alpha = 0.55f),
+    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
 )
 
 @Composable
