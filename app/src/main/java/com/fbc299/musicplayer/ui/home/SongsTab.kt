@@ -54,13 +54,15 @@ import com.fbc299.musicplayer.ui.CoverImage
 
 /**
  * 歌曲 Tab：顶部搜索栏 + 列表。
- * - 搜索词为空：本地全量列表（P12 起若已有收藏，其上方多一段「收藏」）；
+ * - 搜索词为空：本地全量列表（P14 起收藏不再压在列表顶部，改走底部独立「收藏」Tab）；
  * - 搜索词非空：分段显示 —— 第一段「本地」匹配结果，第二段「在线」聚合搜索结果
  *   （在线段仅在 设置→在线音源 开启且服务器地址非空 时出现），
- *   第三段「收藏」P12 新增（收藏越早越靠前，段头带「播放全部」）。
+ *   第三段「收藏」P12 引入、P14 **保留**（搜索时能看到已藏的歌，段头带「播放全部」）。
  *
  * P12 收藏：在线行/收藏行尾部爱心 toggle，收藏行点击走与在线行**同一个** onOnlineClick
  *（含 P9 试听换源的点播流程，由 HomeScreen 传入，不在此处复制解析逻辑）。
+ * P14：收藏整列搬至同包 FavoritesTab.kt —— SectionHeader/FavoritesEmpty/OnlineSongRow
+ * 由 private 放宽为 internal 供其复用，SongListWithFavorites 随之删除。
  */
 @Composable
 fun SongsTab(
@@ -140,26 +142,12 @@ fun SongsTab(
                     onPlayFavorites = onPlayFavorites
                 )
 
-                // P12：无收藏时与原行为完全一致（空库空态 / 本地全量列表）
-                favorites.isEmpty() -> if (filtered.isEmpty()) EmptyLibrary()
+                // P14：收藏已升为独立底部 Tab —— 空搜索词回归原样（空库空态 / 本地全量列表）
+                else -> if (filtered.isEmpty()) EmptyLibrary()
                 else SongList(
                     songs = filtered,
                     currentMediaId = currentMediaId,
                     onSongClick = onSongClick
-                )
-
-                // P12：搜索词为空但已有收藏 —— 「收藏」分段在上，本地全量列表在下
-                else -> SongListWithFavorites(
-                    favorites = favorites,
-                    local = filtered,
-                    currentMediaId = currentMediaId,
-                    resolvingOnlineId = resolvingOnlineId,
-                    onOnlineClick = onOnlineClick,
-                    onToggleFavorite = onToggleFavorite,
-                    downloadingKeys = downloadingKeys,
-                    onDownload = onDownload,
-                    onPlayFavorites = onPlayFavorites,
-                    onLocalClick = onSongClick
                 )
             }
         }
@@ -361,63 +349,10 @@ private fun SearchContent(
     }
 }
 
-/**
- * P12 搜索词为空时的默认视图：「收藏」分段（含段头播放全部）在上，本地全量列表在下。
- * 收藏行点击同样走 onOnlineClick —— 与搜索结果里的在线行是同一个点播流程。
- */
+/** 分段小标题：「本地 12」「在线 20」；P12 收藏段在尾部追加「播放全部」按钮。
+ *  P14 放宽为 internal：同包 FavoritesTab.kt 的收藏分段头复用同一组件。 */
 @Composable
-private fun SongListWithFavorites(
-    favorites: List<OnlineSong>,
-    local: List<Song>,
-    currentMediaId: String?,
-    resolvingOnlineId: String?,
-    onOnlineClick: (OnlineSong) -> Unit,
-    onToggleFavorite: (OnlineSong) -> Unit,
-    downloadingKeys: Set<String>,
-    onDownload: (OnlineSong) -> Unit,
-    onPlayFavorites: () -> Unit,
-    onLocalClick: (Int) -> Unit
-) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        item(key = "h_fav") {
-            SectionHeader(
-                title = stringResource(R.string.favorites),
-                count = favorites.size,
-                onPlayAll = onPlayFavorites
-            )
-        }
-        items(favorites, key = { favoriteKey(it.source, it.sourceId) }) { song ->
-            OnlineSongRow(
-                song = song,
-                isCurrent = song.mediaId == currentMediaId,
-                resolving = song.mediaId == resolvingOnlineId,
-                onClick = { onOnlineClick(song) },
-                favorite = true,
-                onToggleFavorite = { onToggleFavorite(song) },
-                downloading = downloadingKeys.contains(
-                    favoriteKey(song.source, song.sourceId)
-                ),
-                onDownload = { onDownload(song) }
-            )
-        }
-        // 收藏段之上加了分段头，本地段也补一个头，避免两段视觉黏连
-        item(key = "h_local") {
-            SectionHeader(title = stringResource(R.string.section_local), count = local.size)
-        }
-        items(local.withIndex().toList(), key = { it.value.id }) { (index, song) ->
-            SongRow(
-                song = song,
-                isCurrent = song.id.toString() == currentMediaId,
-                onClick = { onLocalClick(index) }
-            )
-        }
-        item(key = "bottom_spacer") { Spacer(Modifier.height(8.dp)) }
-    }
-}
-
-/** 分段小标题：「本地 12」「在线 20」；P12 收藏段在尾部追加「播放全部」按钮 */
-@Composable
-private fun SectionHeader(title: String, count: Int?, onPlayAll: (() -> Unit)? = null) {
+internal fun SectionHeader(title: String, count: Int?, onPlayAll: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -464,9 +399,9 @@ private fun SectionHeader(title: String, count: Int?, onPlayAll: (() -> Unit)? =
     }
 }
 
-/** P12 收藏分段空态：音符水印 + 「还没有收藏」提示 */
+/** P12 收藏分段空态：音符水印 + 「还没有收藏」提示（P14 起与 FavoritesTab 同包共享） */
 @Composable
-private fun FavoritesEmpty() {
+internal fun FavoritesEmpty() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -502,9 +437,10 @@ private fun MessageText(text: String) {
 
 /** 在线搜索结果行：封面（缺图回退云朵）+ 歌名/歌手/专辑 + 来源标；解析直链时显示进度。
  *  P12 尾部追加收藏爱心：图标自身的 clickable 先消费点按，不会冒泡触发行的点播。
- *  P13 爱心旁再追加下载图标：下载中换 18dp 转圈，防重复点击由 LibraryViewModel in-flight 集合兜底。 */
+ *  P13 爱心旁再追加下载图标：下载中换 18dp 转圈，防重复点击由 LibraryViewModel in-flight 集合兜底。
+ *  P14 放宽为 internal：同包 FavoritesTab.kt 的收藏行复用同一组件。 */
 @Composable
-private fun OnlineSongRow(
+internal fun OnlineSongRow(
     song: OnlineSong,
     isCurrent: Boolean,
     resolving: Boolean,

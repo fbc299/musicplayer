@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -74,8 +76,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-/** 底部导航四个 Tab */
-enum class HomeTab { SONGS, ALBUMS, ARTISTS, SETTINGS }
+/** 底部导航五个 Tab（P14：收藏从歌曲列表分段升为独立入口，居第二位） */
+enum class HomeTab { SONGS, FAVORITES, ALBUMS, ARTISTS, SETTINGS }
 
 /** P12 收藏「播放全部」：直链解析并发度上限（聚合服务单机，压太高易被限流） */
 private const val FAVORITES_RESOLVE_CONCURRENCY = 4
@@ -295,6 +297,12 @@ fun HomeScreen(
                     onRefresh = { libraryViewModel.refresh() }
                 )
 
+                // P14 收藏 Tab：列表为收藏快照，不随媒体库扫描刷新 → 无刷新键
+                tab == HomeTab.FAVORITES -> TitleBar(
+                    title = stringResource(R.string.tab_favorites),
+                    onRefresh = null
+                )
+
                 tab == HomeTab.ALBUMS -> TitleBar(
                     title = stringResource(R.string.tab_albums),
                     onRefresh = { libraryViewModel.refresh() }
@@ -321,6 +329,23 @@ fun HomeScreen(
                         onClick = { switchTab(HomeTab.SONGS) },
                         icon = { Icon(Icons.Default.MusicNote, contentDescription = null) },
                         label = { Text(stringResource(R.string.tab_songs)) },
+                        colors = navItemColors()
+                    )
+                    // P14 收藏 Tab：未选 FavoriteBorder、选中 Favorite，着色仍走 navItemColors
+                    //（选中=primary、未选=白55，与播放页顶栏爱心的 primary 实心口径一致）
+                    NavigationBarItem(
+                        selected = tab == HomeTab.FAVORITES,
+                        onClick = { switchTab(HomeTab.FAVORITES) },
+                        icon = {
+                            Icon(
+                                imageVector = if (tab == HomeTab.FAVORITES)
+                                    Icons.Filled.Favorite
+                                else
+                                    Icons.Outlined.FavoriteBorder,
+                                contentDescription = null
+                            )
+                        },
+                        label = { Text(stringResource(R.string.tab_favorites)) },
                         colors = navItemColors()
                     )
                     NavigationBarItem(
@@ -375,6 +400,19 @@ fun HomeScreen(
                     onOnlineClick = onOnlineClick,
                     favorites = favorites,
                     favoriteKeys = favoriteKeys,
+                    onToggleFavorite = { song -> libraryViewModel.toggleFavorite(song) },
+                    downloadingKeys = downloadingKeys,
+                    onDownload = { song -> libraryViewModel.downloadOnline(song) },
+                    onPlayFavorites = onPlayFavorites
+                )
+
+                // P14 收藏独立 Tab：整列收藏 + 段头「播放全部」，点播走同一条 onOnlineClick
+                tab == HomeTab.FAVORITES -> FavoritesTab(
+                    favorites = favorites,
+                    favoriteKeys = favoriteKeys,
+                    currentMediaId = currentMediaId,
+                    resolvingOnlineId = resolvingOnlineId,
+                    onOnlineClick = onOnlineClick,
                     onToggleFavorite = { song -> libraryViewModel.toggleFavorite(song) },
                     downloadingKeys = downloadingKeys,
                     onDownload = { song -> libraryViewModel.downloadOnline(song) },
