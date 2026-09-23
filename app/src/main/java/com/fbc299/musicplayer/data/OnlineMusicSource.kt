@@ -23,6 +23,13 @@ import java.nio.charset.Charset
 const val ONLINE_MEDIA_ID_PREFIX = "on_"
 
 /**
+ * P12 收藏去重键：`source:sourceId`。
+ * 同一首歌可能在不同搜索里反复出现（甚至跨来源），收藏列表按此键去重、
+ * 判断爱心态、以及从 mediaId 反查收藏（Settings / ViewModel / UI 共用同一口径）。
+ */
+fun favoriteKey(source: String, sourceId: String): String = "$source:$sourceId"
+
+/**
  * P9 试听判定阈值：直链字节数低于 960_000（≈60 秒 @128kbps）视为 VIP 试听片段
  *（网易云 30s / 酷我 10s 级残片都远低于此值，正常整曲不会低于此值）。
  */

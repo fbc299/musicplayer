@@ -6,10 +6,13 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 // 应用级设置存储（DataStore preferences）
@@ -58,6 +61,8 @@ class SettingsRepository(private val context: Context) {
         val SCRAPER_ENABLED = booleanPreferencesKey("scraper_enabled")
         /** P5：封面刮削持久缓存（JSON string：songId → 封面 URL，空串=已试失败的负缓存） */
         val SCRAPER_CACHE = stringPreferencesKey("scraper_cache")
+        /** P12：收藏列表（JSON array string，按收藏顺序，source:sourceId 去重） */
+        val FAVORITES = stringPreferencesKey("favorites")
     }
 
     val settings: Flow<ScanSettings> = context.settingsDataStore.data
@@ -147,6 +152,71 @@ class SettingsRepository(private val context: Context) {
             }
         }
         context.settingsDataStore.edit { it[Keys.SCRAPER_CACHE] = json.toString() }
+    }
+
+    // ——————————————————— P12 收藏列表（DataStore JSON 持久化） ———————————————————
+
+    /**
+     * 读取收藏列表（保持收藏顺序 —— 越早收藏越靠前）；缺失/损坏时返回空表。
+     * 反序列化容错：坏 JSON → 空表；单条缺 source/sourceId/title → 跳过该条；
+     * source:sourceId 重复 → 保留先出现的一条（与保存时的去重口径一致）。
+     * 照 SCRAPER_CACHE 的工程风格：`.data.first()` 读 + runCatching 兜底，
+     * 额外套 Dispatchers.IO —— org.json 解析与 DataStore 读取都不占主线程。
+     */
+    suspend fun loadFavorites(): List<OnlineSong> = withContext(Dispatchers.IO) {
+        val raw = context.settingsDataStore.data.first()[Keys.FAVORITES]
+            ?: return@withContext emptyList()
+        runCatching {
+            val array = JSONArray(raw)
+            val out = ArrayList<OnlineSong>(array.length())
+            val seen = HashSet<String>()
+            for (i in 0 until array.length()) {
+                val o = array.optJSONObject(i) ?: continue
+                val source = o.optString("source", "")
+                val sourceId = o.optString("sourceId", "")
+                val title = o.optString("title", "")
+                if (source.isEmpty() || sourceId.isEmpty() || title.isEmpty()) continue
+                if (!seen.add(favoriteKey(source, sourceId))) continue
+                out.add(
+                    OnlineSong(
+                        source = source,
+                        sourceId = sourceId,
+                        title = title,
+                        artist = o.optString("artist", ""),
+                        album = o.optString("album", ""),
+                        artworkUrl = o.optString("artworkUrl", "").takeIf { it.isNotEmpty() },
+                        picId = o.optString("picId", "").takeIf { it.isNotEmpty() }
+                    )
+                )
+            }
+            out
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * 持久化收藏列表（整体覆盖写；JSON array string，key=favorites）。
+     * 写入前同样按 source:sourceId 去重并丢弃缺 source/sourceId 的脏条目，
+     * 顺序即传入顺序 —— 收藏越早越靠前。
+     */
+    suspend fun saveFavorites(favorites: List<OnlineSong>) = withContext(Dispatchers.IO) {
+        val array = JSONArray()
+        val seen = HashSet<String>()
+        for (song in favorites) {
+            if (song.source.isEmpty() || song.sourceId.isEmpty()) continue
+            if (!seen.add(favoriteKey(song.source, song.sourceId))) continue
+            array.put(
+                JSONObject().apply {
+                    put("source", song.source)
+                    put("sourceId", song.sourceId)
+                    put("title", song.title)
+                    put("artist", song.artist)
+                    put("album", song.album)
+                    put("artworkUrl", song.artworkUrl ?: "")
+                    put("picId", song.picId ?: "")
+                }
+            )
+        }
+        context.settingsDataStore.edit { it[Keys.FAVORITES] = array.toString() }
     }
 
     companion object {

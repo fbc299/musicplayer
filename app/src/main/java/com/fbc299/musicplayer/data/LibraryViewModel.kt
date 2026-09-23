@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -100,6 +101,39 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private val _loaded = MutableStateFlow(false)
     val loaded: StateFlow<Boolean> = _loaded
 
+    // ——————————————————— P12 收藏 ———————————————————
+
+    private val _favorites = MutableStateFlow<List<OnlineSong>>(emptyList())
+
+    /** P12 收藏列表：启动时从 DataStore 加载，保持收藏顺序（越早收藏越靠前） */
+    val favorites: StateFlow<List<OnlineSong>> = _favorites
+
+    /**
+     * P12 收藏去重键集合（`source:sourceId`）：由 favorites 派生（stateIn 常驻），
+     * UI 判断爱心态时 O(1) contains，不必每次遍历列表。
+     */
+    val favoriteKeys: StateFlow<Set<String>> = _favorites
+        .map { list ->
+            list.map { song -> favoriteKey(song.source, song.sourceId) }.toHashSet()
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    /**
+     * P12 收藏切换：已藏 → 移除、未藏 → 追加（追加到末尾 = 收藏越早越靠前）。
+     * StateFlow 先更新（UI 立即变心），随后异步落盘；
+     * 落盘读的是 `_favorites.value` 快照，快速连点时后一次写入必然覆盖为最新列表。
+     */
+    fun toggleFavorite(song: OnlineSong) {
+        if (song.source.isEmpty() || song.sourceId.isEmpty()) return
+        val key = favoriteKey(song.source, song.sourceId)
+        val current = _favorites.value
+        val kept = current.filterNot { favoriteKey(it.source, it.sourceId) == key }
+        _favorites.value = if (kept.size == current.size) current + song else kept
+        viewModelScope.launch {
+            runCatching { settingsRepository.saveFavorites(_favorites.value) }
+        }
+    }
+
     // ——————————————————— P5 封面刮削 ———————————————————
 
     /**
@@ -124,6 +158,9 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             // P5：先把持久化刮削缓存加载进内存（命中即零网络），再启动扫描
             _coverMap.value = runCatching { settingsRepository.loadCoverCache() }
                 .getOrDefault(emptyMap())
+            // P12：加载收藏列表（必须在 settings 收集前 —— 下面的 collect 永不返回）
+            _favorites.value = runCatching { settingsRepository.loadFavorites() }
+                .getOrDefault(emptyList())
             // 设置变化（含首次读取）→ 重新扫描
             settingsRepository.settings.collect { settings -> load(settings) }
         }
