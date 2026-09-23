@@ -45,6 +45,7 @@ import com.fbc299.musicplayer.BuildConfig
 import com.fbc299.musicplayer.R
 import com.fbc299.musicplayer.data.OnlineSettings
 import com.fbc299.musicplayer.data.ScanSettings
+import com.fbc299.musicplayer.data.ScrapeStatus
 
 /**
  * 设置 Tab（P8b-3 沉浸式）：表单密度高，可读性优先。
@@ -62,7 +63,8 @@ fun SettingsTab(
     onlineSettings: OnlineSettings,
     onOnlineEnabledChanged: (Boolean) -> Unit,
     onServerUrlChanged: (String) -> Unit,
-    onScraperEnabledChanged: (Boolean) -> Unit
+    onScraperEnabledChanged: (Boolean) -> Unit,
+    scrapeStatus: ScrapeStatus
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         // 沉浸锚点：顶部渐变 + 音符水印（同歌曲/艺术家页）
@@ -282,6 +284,29 @@ fun SettingsTab(
                         enabled = onlineSettings.enabled,
                         onCheckedChange = onScraperEnabledChanged,
                         colors = glassSwitchColors()
+                    )
+                }
+
+                // P9：刮削进度（未启动 total=0 时隐藏）
+                if (scrapeStatus.total > 0) {
+                    Text(
+                        text = if (scrapeStatus.running > 0) {
+                            stringResource(
+                                R.string.scrape_status_running,
+                                scrapeStatus.done + scrapeStatus.failed,
+                                scrapeStatus.total
+                            )
+                        } else {
+                            stringResource(
+                                R.string.scrape_status,
+                                scrapeStatus.done,
+                                scrapeStatus.failed,
+                                scrapeStatus.total
+                            )
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.55f),
+                        modifier = Modifier.padding(bottom = 8.dp)
                     )
                 }
             }

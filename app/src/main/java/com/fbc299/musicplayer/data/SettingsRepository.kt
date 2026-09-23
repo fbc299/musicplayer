@@ -56,7 +56,7 @@ class SettingsRepository(private val context: Context) {
         val ONLINE_SERVER = stringPreferencesKey("online_server")
         /** P5：自动刮削封面开关（默认开） */
         val SCRAPER_ENABLED = booleanPreferencesKey("scraper_enabled")
-        /** P5：封面刮削持久缓存（JSON string：songId → 封面 URL） */
+        /** P5：封面刮削持久缓存（JSON string：songId → 封面 URL，空串=已试失败的负缓存） */
         val SCRAPER_CACHE = stringPreferencesKey("scraper_cache")
     }
 
@@ -130,7 +130,8 @@ class SettingsRepository(private val context: Context) {
             val out = HashMap<String, String>(json.length())
             for (key in json.keys()) {
                 val url = json.optString(key)
-                if (url.startsWith("http")) out[key] = url
+                // P9 负缓存：空串=已试失败，同样读回来（containsKey 直接跳过）
+                if (url.isEmpty() || url.startsWith("http")) out[key] = url
             }
             out
         }.getOrDefault(emptyMap())
@@ -140,7 +141,10 @@ class SettingsRepository(private val context: Context) {
     suspend fun saveCoverCache(cache: Map<String, String>) {
         val json = JSONObject()
         for ((key, url) in cache) {
-            if (key.isNotEmpty() && url.startsWith("http")) json.put(key, url)
+            // P9 负缓存：空串=已试失败，同样持久化（重启后不再反复重试）
+            if (key.isNotEmpty() && (url.isEmpty() || url.startsWith("http"))) {
+                json.put(key, url)
+            }
         }
         context.settingsDataStore.edit { it[Keys.SCRAPER_CACHE] = json.toString() }
     }

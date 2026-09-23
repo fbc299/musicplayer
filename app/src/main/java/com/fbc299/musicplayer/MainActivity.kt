@@ -49,7 +49,11 @@ class MainActivity : ComponentActivity() {
                     // 列表行 / 专辑格 / 详情头 / 播放页 / 迷你条的封面统一取用
                     val libraryViewModel: LibraryViewModel = viewModel()
                     val coverMap by libraryViewModel.coverMap.collectAsState()
-                    CompositionLocalProvider(LocalScrapedCovers provides coverMap) {
+                    // P9：负缓存用空串标记「已试失败」，读取端一律当无值（封面 UI 不受影响）
+                    val scrapedCovers = remember(coverMap) {
+                        coverMap.filterValues { it.isNotBlank() }
+                    }
+                    CompositionLocalProvider(LocalScrapedCovers provides scrapedCovers) {
                         androidx.compose.foundation.layout.Box(
                             modifier = Modifier.fillMaxSize()
                         ) {

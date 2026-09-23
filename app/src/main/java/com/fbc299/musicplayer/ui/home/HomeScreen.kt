@@ -90,6 +90,8 @@ fun HomeScreen(
     val onlinePool by libraryViewModel.onlinePool.collectAsState()
     val onlineLoading by libraryViewModel.onlineLoading.collectAsState()
     val onlineError by libraryViewModel.onlineError.collectAsState()
+    // P9 刮削进度（设置页展示）
+    val scrapeStatus by libraryViewModel.scrapeStatus.collectAsState()
     val playerState = rememberPlayerState()
     StartPositionTicker(playerState)
 
@@ -372,7 +374,8 @@ fun HomeScreen(
                     onlineSettings = onlineSettings,
                     onOnlineEnabledChanged = { libraryViewModel.setOnlineEnabled(it) },
                     onServerUrlChanged = { libraryViewModel.setServerUrl(it) },
-                    onScraperEnabledChanged = { libraryViewModel.setScraperEnabled(it) }
+                    onScraperEnabledChanged = { libraryViewModel.setScraperEnabled(it) },
+                    scrapeStatus = scrapeStatus
                 )
             }
         }

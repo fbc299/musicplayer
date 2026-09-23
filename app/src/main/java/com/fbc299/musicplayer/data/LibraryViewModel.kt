@@ -24,6 +24,18 @@ private const val ONLINE_SEARCH_DEBOUNCE_MS = 350L
 /** P5 封面刮削：每新增 N 首映射落盘一次（整轮结束时再兜底存一次） */
 private const val COVER_SAVE_EVERY = 10
 
+/**
+ * P9 封面刮削进度（供设置页展示）：
+ * running>0 = 正在刮削；done = 成功数（含缓存命中）；failed = 失败数（含负缓存）；
+ * total = 本轮曲目总数（0 = 尚未启动，UI 据此隐藏状态行）。
+ */
+data class ScrapeStatus(
+    val running: Int = 0,
+    val done: Int = 0,
+    val failed: Int = 0,
+    val total: Int = 0
+)
+
 class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val settingsRepository = SettingsRepository(app)
@@ -96,6 +108,13 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
      */
     private val _coverMap = MutableStateFlow<Map<String, String>>(emptyMap())
     val coverMap: StateFlow<Map<String, String>> = _coverMap
+
+    /**
+     * P9 刮削进度：runCoverScrape 每处理一首更新一次，跑完 running=0。
+     * 读取端 MainActivity 会把空串（负缓存）过滤掉，本地封面 UI 不受影响。
+     */
+    private val _scrapeStatus = MutableStateFlow(ScrapeStatus())
+    val scrapeStatus: StateFlow<ScrapeStatus> = _scrapeStatus
 
     /** 串行刮削任务（并发 1）；重扫 / 开关变化时先取消旧任务 */
     private var scrapeJob: Job? = null
@@ -228,31 +247,52 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * 按列表序逐首刮削（循环体内无并发，天然串行 / 并发 1）：
-     * - 缓存命中（_coverMap 已有）→ 跳过网络；
-     * - 每首成功立即写入 StateFlow，满 COVER_SAVE_EVERY 首落盘一次；
-     * - 逐首重读设置：服务器地址热更新，刮削/在线开关关闭立即停；
+     * - 缓存命中（_coverMap 已有，URL 或空串负缓存）→ 跳过网络，只计数；
+     * - 成功写 URL，失败写空串负缓存（containsKey 下轮直接跳过）并记 scrape miss 日志；
+     * - 每首更新 scrapeStatus 供设置页展示进度；
+     * - 每 COVER_SAVE_EVERY 首落盘一次；逐首重读设置：服务器地址热更新，刮削/在线开关关闭立即停；
      * - 尊重取消（重扫时旧任务 cancel），完成或被取消都兜底落盘；
      * - 任何异常静默结束 —— 刮削是尽力而为，绝不影响本地播放。
      */
     private suspend fun runCoverScrape(songs: List<Song>) {
         var sinceSave = 0
         var anyNew = false
+        var done = 0
+        var failed = 0
+        val total = songs.size
+        _scrapeStatus.value = ScrapeStatus(running = 1, total = total)
         try {
             for (song in songs) {
                 // 纯缓存命中的快路径没有挂起点，手动检查取消
                 currentCoroutineContext().ensureActive()
                 val key = song.id.toString()
-                if (_coverMap.value.containsKey(key)) continue
+                val cached = _coverMap.value[key]
+                if (cached != null) {
+                    // 已试过：URL 计成功、空串负缓存计失败，都不再发网络请求
+                    if (cached.isBlank()) failed++ else done++
+                    _scrapeStatus.value = ScrapeStatus(1, done, failed, total)
+                    continue
+                }
                 val online = onlineSettings.value
                 if (!online.scraperActive || online.serverUrl.isBlank()) break
-                val url = CoverScraper.scrape(online.serverUrl, song.title, song.artist)
+                val outcome = CoverScraper.scrapeDetailed(
+                    online.serverUrl, song.title, song.artist
+                )
+                val url = outcome.url
+                // 负缓存：失败也写入（空串），下一轮 containsKey 直接跳过、不再反复重试
+                _coverMap.value = _coverMap.value + (key to (url ?: ""))
+                anyNew = true
                 if (url != null) {
-                    _coverMap.value = _coverMap.value + (key to url)
-                    anyNew = true
-                    if (++sinceSave >= COVER_SAVE_EVERY) {
-                        sinceSave = 0
-                        settingsRepository.saveCoverCache(_coverMap.value)
-                    }
+                    done++
+                } else {
+                    failed++
+                    // 带歌名与原因，便于定位「为什么这首搜不到」
+                    Log.d("LibraryViewModel", "scrape miss: ${song.title} - ${outcome.reason}")
+                }
+                _scrapeStatus.value = ScrapeStatus(1, done, failed, total)
+                if (++sinceSave >= COVER_SAVE_EVERY) {
+                    sinceSave = 0
+                    settingsRepository.saveCoverCache(_coverMap.value)
                 }
             }
         } catch (e: CancellationException) {
@@ -261,10 +301,14 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             Log.w("LibraryViewModel", "cover scrape stopped: ${e.message}")
         } finally {
             if (anyNew) {
-                // 完成或被取消都把已刮到的映射兜底落盘
+                // 完成或被取消都把已刮到的映射（含负缓存）兜底落盘
                 withContext(NonCancellable) {
                     runCatching { settingsRepository.saveCoverCache(_coverMap.value) }
                 }
+            }
+            // 仅当自己仍是当前轮任务才收尾 running（被新任务接管时由新任务接管状态）
+            if (scrapeJob === currentCoroutineContext()[Job]) {
+                _scrapeStatus.value = _scrapeStatus.value.copy(running = 0)
             }
         }
     }
