@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -47,6 +48,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -122,7 +124,15 @@ fun PlayerScreen(
      * 两者由组合方（MainActivity）按 mediaId 前缀 on_ 判定后传入。
      */
     favorite: Boolean? = null,
-    onToggleFavorite: (() -> Unit)? = null
+    onToggleFavorite: (() -> Unit)? = null,
+    /**
+     * P13 下载：canDownload = 当前曲是否为可下载的在线曲（null = 本地曲）；
+     * onDownload = 下载回调（null = 不显示图标）；downloading = 下载中（顶栏转圈）。
+     * 与爱心同一 null 模式，由 MainActivity 按 mediaId 前缀 on_ 组装。
+     */
+    canDownload: Boolean? = null,
+    onDownload: (() -> Unit)? = null,
+    downloading: Boolean = false
 ) {
     val state = rememberPlayerState()
     // P11：播放页是覆盖层（MainActivity 仅在 playerOpen 时组合它），系统返回必须被本页消费，
@@ -280,6 +290,23 @@ fun PlayerScreen(
                                 else
                                     Color.White.copy(alpha = 0.55f)
                             )
+                        }
+                    }
+                    // P13 下载：仅在线曲（canDownload/onDownload 非 null）显示；下载中换成转圈
+                    if (canDownload == true && onDownload != null) {
+                        IconButton(onClick = onDownload) {
+                            if (downloading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.FileDownload,
+                                    contentDescription = stringResource(R.string.download),
+                                    tint = Color.White.copy(alpha = 0.55f)
+                                )
+                            }
                         }
                     }
                     IconButton(onClick = { showQueue = true }) {

@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -77,6 +78,8 @@ fun SongsTab(
     favorites: List<OnlineSong>,
     favoriteKeys: Set<String>,
     onToggleFavorite: (OnlineSong) -> Unit,
+    downloadingKeys: Set<String>,
+    onDownload: (OnlineSong) -> Unit,
     onPlayFavorites: () -> Unit
 ) {
     val filtered = remember(songs, query) {
@@ -132,6 +135,8 @@ fun SongsTab(
                     },
                     onOnlineClick = onOnlineClick,
                     onToggleFavorite = onToggleFavorite,
+                    downloadingKeys = downloadingKeys,
+                    onDownload = onDownload,
                     onPlayFavorites = onPlayFavorites
                 )
 
@@ -151,6 +156,8 @@ fun SongsTab(
                     resolvingOnlineId = resolvingOnlineId,
                     onOnlineClick = onOnlineClick,
                     onToggleFavorite = onToggleFavorite,
+                    downloadingKeys = downloadingKeys,
+                    onDownload = onDownload,
                     onPlayFavorites = onPlayFavorites,
                     onLocalClick = onSongClick
                 )
@@ -241,6 +248,8 @@ private fun SearchContent(
     onLocalSongClick: (Song) -> Unit,
     onOnlineClick: (OnlineSong) -> Unit,
     onToggleFavorite: (OnlineSong) -> Unit,
+    downloadingKeys: Set<String>,
+    onDownload: (OnlineSong) -> Unit,
     onPlayFavorites: () -> Unit
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -308,7 +317,11 @@ private fun SearchContent(
                         favorite = favoriteKeys.contains(
                             favoriteKey(song.source, song.sourceId)
                         ),
-                        onToggleFavorite = { onToggleFavorite(song) }
+                        onToggleFavorite = { onToggleFavorite(song) },
+                        downloading = downloadingKeys.contains(
+                            favoriteKey(song.source, song.sourceId)
+                        ),
+                        onDownload = { onDownload(song) }
                     )
                 }
             }
@@ -335,7 +348,11 @@ private fun SearchContent(
                     // 与在线段同一入口：HomeScreen 的点播 lambda（含 P9 试听换源）
                     onClick = { onOnlineClick(song) },
                     favorite = true,
-                    onToggleFavorite = { onToggleFavorite(song) }
+                    onToggleFavorite = { onToggleFavorite(song) },
+                    downloading = downloadingKeys.contains(
+                        favoriteKey(song.source, song.sourceId)
+                    ),
+                    onDownload = { onDownload(song) }
                 )
             }
         }
@@ -356,6 +373,8 @@ private fun SongListWithFavorites(
     resolvingOnlineId: String?,
     onOnlineClick: (OnlineSong) -> Unit,
     onToggleFavorite: (OnlineSong) -> Unit,
+    downloadingKeys: Set<String>,
+    onDownload: (OnlineSong) -> Unit,
     onPlayFavorites: () -> Unit,
     onLocalClick: (Int) -> Unit
 ) {
@@ -374,7 +393,11 @@ private fun SongListWithFavorites(
                 resolving = song.mediaId == resolvingOnlineId,
                 onClick = { onOnlineClick(song) },
                 favorite = true,
-                onToggleFavorite = { onToggleFavorite(song) }
+                onToggleFavorite = { onToggleFavorite(song) },
+                downloading = downloadingKeys.contains(
+                    favoriteKey(song.source, song.sourceId)
+                ),
+                onDownload = { onDownload(song) }
             )
         }
         // 收藏段之上加了分段头，本地段也补一个头，避免两段视觉黏连
@@ -478,7 +501,8 @@ private fun MessageText(text: String) {
 }
 
 /** 在线搜索结果行：封面（缺图回退云朵）+ 歌名/歌手/专辑 + 来源标；解析直链时显示进度。
- *  P12 尾部追加收藏爱心：图标自身的 clickable 先消费点按，不会冒泡触发行的点播。 */
+ *  P12 尾部追加收藏爱心：图标自身的 clickable 先消费点按，不会冒泡触发行的点播。
+ *  P13 爱心旁再追加下载图标：下载中换 18dp 转圈，防重复点击由 LibraryViewModel in-flight 集合兜底。 */
 @Composable
 private fun OnlineSongRow(
     song: OnlineSong,
@@ -486,7 +510,9 @@ private fun OnlineSongRow(
     resolving: Boolean,
     onClick: () -> Unit,
     favorite: Boolean = false,
-    onToggleFavorite: (() -> Unit)? = null
+    onToggleFavorite: (() -> Unit)? = null,
+    downloading: Boolean = false,
+    onDownload: (() -> Unit)? = null
 ) {
     val sourceLabel = when (song.source) {
         "migu" -> stringResource(R.string.source_migu)
@@ -593,6 +619,24 @@ private fun OnlineSongRow(
                     else
                         Color.White.copy(alpha = 0.55f)
                 )
+            }
+        }
+        // P13 下载（来源标与爱心之后）：空闲 FileDownload 白55；下载中换 18dp 转圈
+        if (onDownload != null) {
+            IconButton(onClick = onDownload) {
+                if (downloading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.FileDownload,
+                        contentDescription = stringResource(R.string.download),
+                        modifier = Modifier.size(22.dp),
+                        tint = Color.White.copy(alpha = 0.55f)
+                    )
+                }
             }
         }
     }

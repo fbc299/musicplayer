@@ -102,6 +102,8 @@ fun HomeScreen(
     // P12 收藏（列表 + 去重键集合）
     val favorites by libraryViewModel.favorites.collectAsState()
     val favoriteKeys by libraryViewModel.favoriteKeys.collectAsState()
+    // P13 下载进行中集合（favoriteKey）：行内转圈 + 防重复点击
+    val downloadingKeys by libraryViewModel.downloading.collectAsState()
     val playerState = rememberPlayerState()
     StartPositionTicker(playerState)
 
@@ -373,6 +375,8 @@ fun HomeScreen(
                     favorites = favorites,
                     favoriteKeys = favoriteKeys,
                     onToggleFavorite = { song -> libraryViewModel.toggleFavorite(song) },
+                    downloadingKeys = downloadingKeys,
+                    onDownload = { song -> libraryViewModel.downloadOnline(song) },
                     onPlayFavorites = onPlayFavorites
                 )
 

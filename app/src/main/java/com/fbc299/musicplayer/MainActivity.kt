@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
                                 // 本地曲 onlineSongOf 返回 null → favorite/onToggleFavorite 传 null 不显示
                                 val playerState = rememberPlayerState()
                                 val favoriteKeys by libraryViewModel.favoriteKeys.collectAsState()
+                                val downloadingKeys by libraryViewModel.downloading.collectAsState()
                                 val currentOnline = onlineSongOf(playerState?.currentMediaItem)
                                 val favorite: Boolean? = currentOnline?.let { song ->
                                     favoriteKeys.contains(
@@ -78,10 +79,23 @@ class MainActivity : ComponentActivity() {
                                 val onToggleFavorite: (() -> Unit)? = currentOnline?.let { song ->
                                     { libraryViewModel.toggleFavorite(song) }
                                 }
+                                // P13 播放页下载：仅在线曲（canDownload/onDownload 非 null）显示；
+                                // downloading 按 favoriteKey 查进行中集合 → 顶栏转圈
+                                val canDownload: Boolean? = currentOnline?.let { true }
+                                val onDownload: (() -> Unit)? = currentOnline?.let { song ->
+                                    { libraryViewModel.downloadOnline(song) }
+                                }
+                                val downloadKey: String? = currentOnline?.let { song ->
+                                    favoriteKey(song.source, song.sourceId)
+                                }
                                 PlayerScreen(
                                     onClose = { playerOpen = false },
                                     favorite = favorite,
-                                    onToggleFavorite = onToggleFavorite
+                                    onToggleFavorite = onToggleFavorite,
+                                    canDownload = canDownload,
+                                    onDownload = onDownload,
+                                    downloading = downloadKey != null &&
+                                        downloadingKeys.contains(downloadKey)
                                 )
                             }
                         }

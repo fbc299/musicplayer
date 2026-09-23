@@ -108,6 +108,7 @@
     <string name="favorites_resolved">已加入播放 %1$d 首，%2$d 首解析失败</string>
 
     <!-- P13：在线歌曲下载 -->
+    <string name="download">下载</string>
     <!-- 下载落盘子目录名（路径常量，不随语言变化） -->
     <string name="download_sub_dir" translatable="false">格格音乐</string>
     <string name="download_started">开始下载：%1$s</string>
