@@ -24,7 +24,7 @@ const val ONLINE_MEDIA_ID_PREFIX = "on_"
 
 /** 在线搜索结果（自建 Meting 聚合 API） */
 data class OnlineSong(
-    /** 数据源：netease / qq */
+    /** 数据源：migu / netease / kuwo / qq */
     val source: String,
     /** 源站原始 id（网易为数字，QQ 为 mid 字符串） */
     val sourceId: String,
@@ -59,7 +59,7 @@ data class OnlineSong(
  * 在线音源网络层：HttpURLConnection + kotlinx.coroutines，无第三方依赖。
  *
  * 对接自建 Meting 聚合服务（标准 metowolf/Meting 接口）：
- *   GET /?type=search&source={netease|qq}&name={关键词}&s=0&n=20  → JSON 数组
+ *   GET /?type=search&source={migu|netease|kuwo|qq}&name={关键词}&s=0&n=20  → JSON 数组
  *   GET /?type=url&source=...&id=...                              → {url: 直链}
  *   GET /?type=lyric&source=...&id=...                            → LRC 文本
  *   GET /?type=pic&source=...&id={pic_id}&size=500                → {url: 封面图 URL}
@@ -73,8 +73,12 @@ object OnlineMusicSource {
     /** 默认聚合服务地址（与 SettingsRepository.DEFAULT_ONLINE_SERVER 同源） */
     const val DEFAULT_SERVER = "http://fbc299.xyz:18090"
 
-    /** 依次尝试的数据源（搜索时全部请求后合并去重） */
-    val SOURCES = listOf("netease", "qq")
+    /**
+     * 依次尝试的数据源（搜索时全部并发请求后合并去重）。
+     * 顺序即优先级：migu（咪咕 VIP 歌给整曲）→ netease → kuwo；
+     * 同一首歌只保留列表中最先命中来源的条目。
+     */
+    val SOURCES = listOf("migu", "netease", "kuwo")
 
     private const val TIMEOUT_MS = 8_000
     private const val PAGE_SIZE = 20
@@ -82,7 +86,9 @@ object OnlineMusicSource {
     /**
      * 聚合搜索：并发请求给定数据源（默认 SOURCES），单源失败静默忽略；
      * 全部数据源失败才抛异常（调用方显示「在线搜索失败」）。
-     * 结果按歌名规范化去重，保持给定的来源顺序。
+     * 结果先按 SOURCES 优先级稳定排序（migu → netease → kuwo），再按
+     * 「歌名+歌手」规范化去重 —— 同一首歌只留优先级最高来源的条目，
+     * 不同歌曲各自保留（咪咕整曲优先）。
      * @param sources 仅请求这些数据源（P5 封面刮削只搜 netease 取 pic_id）
      */
     suspend fun search(
@@ -103,8 +109,15 @@ object OnlineMusicSource {
                 throw (results.firstOrNull()?.exceptionOrNull()
                     ?: IOException("online search failed"))
             }
-            dedupeByName(lists.flatten())
+            // 稳定排序到 SOURCES 优先级（migu → netease → kuwo），再按歌名+歌手去重取首个
+            dedupeByTitleArtist(
+                lists.flatten().sortedBy { song -> sourcePriority(song.source) }
+            )
         }
+
+    /** 来源优先级：SOURCES 中越靠前越优先（咪咕整曲优先），未知来源排最后 */
+    private fun sourcePriority(source: String): Int =
+        SOURCES.indexOf(source).let { index -> if (index >= 0) index else SOURCES.size }
 
     /** 取试听直链；响应异常或找不到 http URL 时返回 null */
     suspend fun getUrl(server: String, source: String, id: String): String? =
@@ -380,12 +393,17 @@ object OnlineMusicSource {
         null
     }
 
-    /** 按歌名规范化去重（小写、去空白），保留先出现的来源顺序 */
-    private fun dedupeByName(songs: List<OnlineSong>): List<OnlineSong> {
+    /**
+     * 按「歌名+歌手」规范化去重（小写、去空白），保留先出现的来源 ——
+     * 输入已按来源优先级排好序，故同名曲留下的必是 migu → netease → kuwo 中首个命中的。
+     */
+    private fun dedupeByTitleArtist(songs: List<OnlineSong>): List<OnlineSong> {
         val seen = HashSet<String>()
+        val blank = Regex("""\s+""")
         return songs.filter { song ->
-            val key = song.title.lowercase().replace(Regex("""\s+"""), "")
-            key.isNotEmpty() && seen.add(key)
+            val title = song.title.lowercase().replace(blank, "")
+            val artist = song.artist.lowercase().replace(blank, "")
+            title.isNotEmpty() && seen.add("$title|$artist")
         }
     }
 }

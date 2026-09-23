@@ -276,7 +276,9 @@ private fun OnlineSongRow(
     onClick: () -> Unit
 ) {
     val sourceLabel = when (song.source) {
+        "migu" -> stringResource(R.string.source_migu)
         "netease" -> stringResource(R.string.source_netease)
+        "kuwo" -> stringResource(R.string.source_kuwo)
         "qq" -> stringResource(R.string.source_qq)
         else -> song.source
     }

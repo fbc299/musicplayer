@@ -70,7 +70,7 @@
     <!-- P4：在线音源 -->
     <string name="settings_online">在线音源</string>
     <string name="online_enabled">启用在线搜索</string>
-    <string name="online_enabled_desc">开启后在歌曲页搜索时同步搜索在线音源（网易云 / QQ）</string>
+    <string name="online_enabled_desc">开启后在歌曲页搜索时同步搜索在线音源（咪咕 / 网易云 / 酷我）</string>
     <string name="online_server_label">服务器地址</string>
     <string name="online_server_hint">http://fbc299.xyz:18090</string>
     <string name="section_local">本地</string>
@@ -81,6 +81,8 @@
     <string name="online_url_failed">获取播放地址失败</string>
     <string name="source_netease">网易云</string>
     <string name="source_qq">QQ</string>
+    <string name="source_migu">咪咕</string>
+    <string name="source_kuwo">酷我</string>
 
     <!-- P5：封面刮削 -->
     <string name="scraper_enabled">自动刮削封面</string>
