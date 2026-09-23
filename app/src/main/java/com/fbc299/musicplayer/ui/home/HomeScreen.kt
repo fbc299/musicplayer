@@ -1,5 +1,6 @@
 package com.fbc299.musicplayer.ui.home
 
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -85,6 +86,8 @@ fun HomeScreen(
     // P4 在线音源状态
     val onlineSettings by libraryViewModel.onlineSettings.collectAsState()
     val onlineResults by libraryViewModel.onlineResults.collectAsState()
+    // P9 试听换源候选池（去重前的全量结果）
+    val onlinePool by libraryViewModel.onlinePool.collectAsState()
     val onlineLoading by libraryViewModel.onlineLoading.collectAsState()
     val onlineError by libraryViewModel.onlineError.collectAsState()
     val playerState = rememberPlayerState()
@@ -110,17 +113,57 @@ fun HomeScreen(
         if (resolvingOnlineId == null && onlineActive) {
             resolvingOnlineId = song.mediaId
             onlineScope.launch {
-                val result = runCatching {
-                    OnlineMusicSource.getUrl(
+                // 原条目解析；换源过程任何异常都被吞掉并回落到这里，绝不让点播失败
+                var chosen = song
+                var resolved = runCatching {
+                    OnlineMusicSource.resolveUrl(
                         onlineSettings.serverUrl,
                         song.source,
                         song.sourceId
                     )
-                }
+                }.getOrNull()
                 // 取消时不覆盖状态（runCatching 会吞掉取消异常）
                 ensureActive()
+
+                // P9 试听防护：size < 960_000（≈60s@128k）= VIP 试听片段 → 换同歌完整版源
+                if (resolved?.isPreview() == true) {
+                    runCatching {
+                        // 同歌名 + 同规范化歌手、source 不同的条目，按 SOURCES 优先级逐个换源
+                        val candidates = onlinePool
+                            .filter { candidate ->
+                                candidate.source != song.source &&
+                                    isSameSongForSwitch(candidate, song)
+                            }
+                            .sortedBy { candidate -> sourceSortKey(candidate.source) }
+                        for (candidate in candidates) {
+                            ensureActive()
+                            val alt = OnlineMusicSource.resolveUrl(
+                                onlineSettings.serverUrl,
+                                candidate.source,
+                                candidate.sourceId
+                            ) ?: continue
+                            // 找到完整版（size ≥ 960_000，size 缺失同样按完整版对待）
+                            if (!alt.isPreview()) {
+                                chosen = candidate
+                                resolved = alt
+                                Toast.makeText(
+                                    appContext,
+                                    appContext.getString(
+                                        R.string.preview_switched,
+                                        sourceLabel(appContext, candidate.source)
+                                    ),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                break
+                            }
+                        }
+                    }
+                    // runCatching 会吞掉取消异常：重新抛出，避免取消后仍去点播
+                    ensureActive()
+                }
+
                 resolvingOnlineId = null
-                val directUrl = result.getOrNull()
+                val directUrl = resolved?.url
                 if (directUrl.isNullOrBlank()) {
                     Toast.makeText(
                         appContext,
@@ -128,7 +171,8 @@ fun HomeScreen(
                         Toast.LENGTH_SHORT
                     ).show()
                 } else {
-                    PlayerConnection.playOnline(listOf(song.toMediaItem(directUrl)), 0)
+                    // mediaId / 封面 / 歌词都跟着 chosen（换源后自然是新 source 的条目）
+                    PlayerConnection.playOnline(listOf(chosen.toMediaItem(directUrl)), 0)
                     onOpenPlayer()
                 }
             }
@@ -524,4 +568,40 @@ private fun MiniPlayer(
             }
         }
     }
+}
+
+// ————————————————————— P9 短音频试听自动换源 —————————————————————
+
+/**
+ * 换源候选匹配：同规范化歌名（必须相等）+ 同规范化歌手
+ *（相等或互含；任一侧歌手空缺视为匹配 —— 不同源的歌手字段格式常有出入）。
+ */
+private fun isSameSongForSwitch(a: OnlineSong, b: OnlineSong): Boolean {
+    val titleA = normalizeSwitchKey(a.title)
+    val titleB = normalizeSwitchKey(b.title)
+    if (titleA.isEmpty() || titleA != titleB) return false
+    val artistA = normalizeSwitchKey(a.artist)
+    val artistB = normalizeSwitchKey(b.artist)
+    return artistA.isEmpty() || artistB.isEmpty() ||
+        artistA == artistB ||
+        artistA.contains(artistB) || artistB.contains(artistA)
+}
+
+/** 规范化口径：小写 + 去空白与常见分隔/括号字符（与刮削打分、搜索去重一致） */
+private fun normalizeSwitchKey(text: String): String = text
+    .lowercase()
+    .replace(Regex("""[\s\-_·・.。，,、:：!！?？()（）\[\]【】'’“”"]+"""), "")
+
+/** 换源候选优先级：SOURCES 顺序（migu → netease → kuwo），未知源排最后 */
+private fun sourceSortKey(source: String): Int =
+    OnlineMusicSource.SOURCES.indexOf(source)
+        .let { index -> if (index >= 0) index else Int.MAX_VALUE }
+
+/** 数据源中文名（Toast 文案用，与在线列表行内来源标同源） */
+private fun sourceLabel(context: Context, source: String): String = when (source) {
+    "migu" -> context.getString(R.string.source_migu)
+    "netease" -> context.getString(R.string.source_netease)
+    "kuwo" -> context.getString(R.string.source_kuwo)
+    "qq" -> context.getString(R.string.source_qq)
+    else -> source
 }

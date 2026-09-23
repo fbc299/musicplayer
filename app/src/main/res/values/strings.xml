@@ -93,6 +93,9 @@
     <string name="source_migu">咪咕</string>
     <string name="source_kuwo">酷我</string>
 
+    <!-- P9：短音频试听自动换源 -->
+    <string name="preview_switched">已换%1$s完整版</string>
+
     <!-- P5：封面刮削 -->
     <string name="scraper_enabled">自动刮削封面</string>
     <string name="scraper_enabled_desc">在线音源开启时，为本地歌曲联网补全封面（复用同一服务器地址）</string>

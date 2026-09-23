@@ -22,6 +22,24 @@ import java.nio.charset.Charset
  */
 const val ONLINE_MEDIA_ID_PREFIX = "on_"
 
+/**
+ * P9 试听判定阈值：直链字节数低于 960_000（≈60 秒 @128kbps）视为 VIP 试听片段
+ *（网易云 30s / 酷我 10s 级残片都远低于此值，正常整曲不会低于此值）。
+ */
+const val PREVIEW_MAX_BYTES = 960_000L
+
+/** P9 点播解析结果：直链 + url 端点响应携带的字节数（解析不到为 null） */
+data class ResolvedUrl(
+    val url: String,
+    val size: Long?
+) {
+    /**
+     * 试听判定：size 明确小于阈值才算试听片段；
+     * size 缺失按完整版对待（与原条目判定口径一致 —— 只有明确 <960_000 才触发换源）。
+     */
+    fun isPreview(): Boolean = size != null && size < PREVIEW_MAX_BYTES
+}
+
 /** 在线搜索结果（自建 Meting 聚合 API） */
 data class OnlineSong(
     /** 数据源：migu / netease / kuwo / qq */
@@ -95,6 +113,17 @@ object OnlineMusicSource {
         server: String,
         keyword: String,
         sources: List<String> = SOURCES
+    ): List<OnlineSong> = dedupeByTitleArtist(searchRaw(server, keyword, sources))
+
+    /**
+     * P9：与 search 同一条链路，但**不去重** —— 同一首歌的 migu / netease / kuwo 条目
+     * 全部保留（仍按 SOURCES 优先级排序），用作试听换源的候选池；
+     * 展示列表仍走 search()（dedupeByTitleArtist 后一首歌只留最高优先级来源）。
+     */
+    suspend fun searchRaw(
+        server: String,
+        keyword: String,
+        sources: List<String> = SOURCES
     ): List<OnlineSong> =
         withContext(Dispatchers.IO) {
             val kw = keyword.trim()
@@ -109,23 +138,30 @@ object OnlineMusicSource {
                 throw (results.firstOrNull()?.exceptionOrNull()
                     ?: IOException("online search failed"))
             }
-            // 稳定排序到 SOURCES 优先级（migu → netease → kuwo），再按歌名+歌手去重取首个
-            dedupeByTitleArtist(
-                lists.flatten().sortedBy { song -> sourcePriority(song.source) }
-            )
+            // 稳定排序到 SOURCES 优先级（migu → netease → kuwo），不去重
+            lists.flatten().sortedBy { song -> sourcePriority(song.source) }
         }
 
     /** 来源优先级：SOURCES 中越靠前越优先（咪咕整曲优先），未知来源排最后 */
     private fun sourcePriority(source: String): Int =
         SOURCES.indexOf(source).let { index -> if (index >= 0) index else SOURCES.size }
 
-    /** 取试听直链；响应异常或找不到 http URL 时返回 null */
-    suspend fun getUrl(server: String, source: String, id: String): String? =
+    /**
+     * P9 点播解析：取直链并顺带解析 url 端点响应里的字节数（试听检测用）；
+     * 响应异常或找不到 http URL 返回 null。
+     */
+    suspend fun resolveUrl(server: String, source: String, id: String): ResolvedUrl? =
         withContext(Dispatchers.IO) {
             val url = normalizeServer(server) +
                 "/?type=url&source=$source&id=" + URLEncoder.encode(id, "UTF-8")
-            extractUrl(httpGet(url))
+            val raw = httpGet(url)
+            val direct = extractUrl(raw) ?: return@withContext null
+            ResolvedUrl(direct, extractSize(raw))
         }
+
+    /** 取试听直链；响应异常或找不到 http URL 时返回 null（等价于 resolveUrl()?.url） */
+    suspend fun getUrl(server: String, source: String, id: String): String? =
+        resolveUrl(server, source, id)?.url
 
     /** 拉取 LRC 歌词文本（喂给 LrcParser.parseLrc）；失败返回 null */
     suspend fun lyric(server: String, source: String, id: String): String? =
@@ -148,6 +184,58 @@ object OnlineMusicSource {
                 "&size=500"
             extractUrl(httpGet(url))
         }
+
+    // ——————————————————— P9：直链字节数（试听检测） ———————————————————
+
+    /** url 端点响应里的字节数字段别名（大小写 / 下划线变体） */
+    private val SIZE_KEYS = listOf(
+        "size", "fileSize", "file_size", "songSize", "songsize",
+        "dataSize", "data_size", "contentLength", "content_length", "bytes"
+    )
+
+    /** 非 JSON 响应的兜底：直接在原文里抓 "size":123 形式的数字 */
+    private val SIZE_REGEX =
+        Regex(""""(?i)"(?:size|filesize|songsize|datasize|contentlength|bytes)"\s*:\s*(\d+)""")
+
+    /**
+     * 解析直链响应携带的字节数：JSON 逐层找 size 类字段 → 认不出时正则抓原文；
+     * 没有 size 信息返回 null（调用方按完整版对待）。
+     */
+    private fun extractSize(raw: String): Long? {
+        val t = raw.trim()
+        if (t.isEmpty()) return null
+        val json = parseJsonOrNull(t)
+            ?: return SIZE_REGEX.find(t)?.groupValues?.get(1)?.toLongOrNull()
+        return findSizeIn(json, 0)
+    }
+
+    private fun findSizeIn(v: Any?, depth: Int): Long? {
+        if (depth > 4) return null
+        return when (v) {
+            is JSONObject -> {
+                for (key in SIZE_KEYS) {
+                    val size = when (val value = v.opt(key)) {
+                        is Number -> value.toLong()
+                        is String -> value.trim().toLongOrNull()
+                        else -> null
+                    }
+                    if (size != null && size > 0) return size
+                }
+                val keys = v.keys()
+                while (keys.hasNext()) {
+                    findSizeIn(v.opt(keys.next()), depth + 1)?.let { return it }
+                }
+                null
+            }
+            is JSONArray -> {
+                for (i in 0 until v.length()) {
+                    findSizeIn(v.opt(i), depth + 1)?.let { return it }
+                }
+                null
+            }
+            else -> null
+        }
+    }
 
     // ——————————————————— 请求 ———————————————————
 
@@ -396,8 +484,9 @@ object OnlineMusicSource {
     /**
      * 按「歌名+歌手」规范化去重（小写、去空白），保留先出现的来源 ——
      * 输入已按来源优先级排好序，故同名曲留下的必是 migu → netease → kuwo 中首个命中的。
+     * P9 起公开：LibraryViewModel 用 searchRaw() 取全量候选池，再用本方法还原展示列表。
      */
-    private fun dedupeByTitleArtist(songs: List<OnlineSong>): List<OnlineSong> {
+    fun dedupeByTitleArtist(songs: List<OnlineSong>): List<OnlineSong> {
         val seen = HashSet<String>()
         val blank = Regex("""\s+""")
         return songs.filter { song ->

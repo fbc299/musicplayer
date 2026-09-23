@@ -56,6 +56,14 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private val _onlineResults = MutableStateFlow<List<OnlineSong>>(emptyList())
     val onlineResults: StateFlow<List<OnlineSong>> = _onlineResults
 
+    /**
+     * P9 试听换源候选池：同一次搜索**去重前**的全量结果（同一首歌的多源条目都在）。
+     * onlineResults 已按「歌名+歌手」去重 —— 一首歌只留 SOURCES 中最高优先级的来源，
+     * 而换源要找的正是被去重掉的其他源，故额外保留这份池子；展示仍用 onlineResults。
+     */
+    private val _onlinePool = MutableStateFlow<List<OnlineSong>>(emptyList())
+    val onlinePool: StateFlow<List<OnlineSong>> = _onlinePool
+
     private val _onlineLoading = MutableStateFlow(false)
     val onlineLoading: StateFlow<Boolean> = _onlineLoading
 
@@ -138,6 +146,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         onlineJob?.cancel()
         if (query.isBlank() || !settings.active) {
             _onlineResults.value = emptyList()
+            _onlinePool.value = emptyList()
             _onlineLoading.value = false
             _onlineError.value = false
             return
@@ -146,13 +155,17 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             _onlineLoading.value = true
             _onlineError.value = false
             _onlineResults.value = emptyList()
+            _onlinePool.value = emptyList()
             delay(ONLINE_SEARCH_DEBOUNCE_MS)
             val result = runCatching {
-                OnlineMusicSource.search(settings.serverUrl, query)
+                OnlineMusicSource.searchRaw(settings.serverUrl, query)
             }
             // runCatching 会吞掉取消异常：这里重新抛出，避免旧请求覆盖新状态
             ensureActive()
-            _onlineResults.value = result.getOrDefault(emptyList())
+            val all = result.getOrDefault(emptyList())
+            // 候选池留全量（P9 试听换源用），展示列表按歌名+歌手去重
+            _onlinePool.value = all
+            _onlineResults.value = OnlineMusicSource.dedupeByTitleArtist(all)
             _onlineError.value = result.isFailure
             _onlineLoading.value = false
         }
