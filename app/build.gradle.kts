@@ -12,8 +12,8 @@ android {
         applicationId = "com.fbc299.musicplayer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "0.10.0"
+        versionCode = 13
+        versionName = "0.11.0"
 
         vectorDrawables {
             useSupportLibrary = true
