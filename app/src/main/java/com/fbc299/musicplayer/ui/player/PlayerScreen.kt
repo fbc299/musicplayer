@@ -3,7 +3,11 @@ package com.fbc299.musicplayer.ui.player
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -47,7 +52,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -61,8 +65,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -318,7 +324,8 @@ fun PlayerScreen(onClose: () -> Unit) {
 
                     Spacer(Modifier.height(4.dp))
 
-                    // 控制按钮行
+                    // 控制按钮行（P11 焕新）：40dp 白9% 圆底开关钮 / 48dp 玻璃圆 上下曲 /
+                    // 64dp primary 圆主钮（Crossfade 200ms 切图标）。功能、文案完全不变。
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -326,76 +333,114 @@ fun PlayerScreen(onClose: () -> Unit) {
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = {
-                            PlayerConnection.shuffle(!state.shuffleEnabled)
-                        }) {
+                        // 随机：40dp 白9% 圆底 + 20dp 图标（未激活 白55 / 激活 primary）
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.09f))
+                                .clickable { PlayerConnection.shuffle(!state.shuffleEnabled) },
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
                                 Icons.Default.Shuffle,
                                 contentDescription = stringResource(R.string.shuffle),
+                                modifier = Modifier.size(20.dp),
                                 tint = if (state.shuffleEnabled)
                                     MaterialTheme.colorScheme.primary
                                 else
                                     Color.White.copy(alpha = 0.55f)
                             )
                         }
-                        IconButton(onClick = { PlayerConnection.previous() }) {
+                        // 上一首：48dp 玻璃圆底（白12%）+ 26dp 纯白图标
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.12f))
+                                .clickable { PlayerConnection.previous() },
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
                                 Icons.Default.SkipPrevious,
                                 contentDescription = stringResource(R.string.previous),
-                                modifier = Modifier.size(40.dp),
+                                modifier = Modifier.size(26.dp),
                                 tint = Color.White
                             )
                         }
-                        // 播放/暂停 大圆钮
+                        // 播放/暂停 主钮：64dp primary 正圆 + 8dp 微投影 + 32dp onPrimary 图标
                         Box(
                             modifier = Modifier
-                                .size(72.dp)
-                                .clip(RoundedCornerShape(36.dp))
+                                .size(64.dp)
+                                .shadow(elevation = 8.dp, shape = CircleShape)
+                                .clip(CircleShape)
                                 .background(MaterialTheme.colorScheme.primary)
                                 .clickable { PlayerConnection.togglePlay() },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = if (state.isPlaying) Icons.Default.Pause
-                                else Icons.Default.PlayArrow,
-                                contentDescription = if (state.isPlaying)
-                                    stringResource(R.string.pause)
-                                else
-                                    stringResource(R.string.play),
-                                modifier = Modifier.size(40.dp),
-                                tint = MaterialTheme.colorScheme.onPrimary
-                            )
+                            Crossfade(
+                                targetState = state.isPlaying,
+                                animationSpec = tween(durationMillis = 200),
+                                label = "playPause"
+                            ) { playing ->
+                                Icon(
+                                    imageVector = if (playing) Icons.Default.Pause
+                                    else Icons.Default.PlayArrow,
+                                    contentDescription = if (playing)
+                                        stringResource(R.string.pause)
+                                    else
+                                        stringResource(R.string.play),
+                                    modifier = Modifier.size(32.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
                         }
-                        IconButton(onClick = { PlayerConnection.next() }) {
+                        // 下一首：同上一首玻璃圆
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.12f))
+                                .clickable { PlayerConnection.next() },
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
                                 Icons.Default.SkipNext,
                                 contentDescription = stringResource(R.string.next),
-                                modifier = Modifier.size(40.dp),
+                                modifier = Modifier.size(26.dp),
                                 tint = Color.White
                             )
                         }
-                        // 循环模式：关闭 → 列表循环 → 单曲循环
+                        // 循环模式：关闭 → 列表循环 → 单曲循环（40dp 白9% 圆底，Toast 提示不变）
                         val repeatLabel = when (state.repeatMode) {
                             Player.REPEAT_MODE_ONE -> stringResource(R.string.repeat_one)
                             Player.REPEAT_MODE_ALL -> stringResource(R.string.repeat_list)
                             else -> stringResource(R.string.repeat_off)
                         }
                         val repeatEnabled = state.repeatMode != Player.REPEAT_MODE_OFF
-                        IconButton(onClick = {
-                            val next = PlayerConnection.cycleRepeatMode()
-                            val toast = when (next) {
-                                RepeatMode.ALL -> context.getString(R.string.repeat_list)
-                                RepeatMode.ONE -> context.getString(R.string.repeat_one)
-                                RepeatMode.OFF -> context.getString(R.string.repeat_off)
-                            }
-                            Toast.makeText(context, toast, Toast.LENGTH_SHORT).show()
-                        }) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.09f))
+                                .clickable {
+                                    val next = PlayerConnection.cycleRepeatMode()
+                                    val toast = when (next) {
+                                        RepeatMode.ALL -> context.getString(R.string.repeat_list)
+                                        RepeatMode.ONE -> context.getString(R.string.repeat_one)
+                                        RepeatMode.OFF -> context.getString(R.string.repeat_off)
+                                    }
+                                    Toast.makeText(context, toast, Toast.LENGTH_SHORT).show()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
                                 imageVector = if (state.repeatMode == Player.REPEAT_MODE_ONE)
                                     Icons.Default.RepeatOne
                                 else
                                     Icons.Default.Repeat,
                                 contentDescription = repeatLabel,
+                                modifier = Modifier.size(20.dp),
                                 tint = if (repeatEnabled)
                                     MaterialTheme.colorScheme.primary
                                 else
@@ -776,6 +821,13 @@ private fun LyricOffsetBar(
     }
 }
 
+/**
+ * P11 进度条焕新：已播放段 primary→亮 primary 横向渐变、未播放段白22% 圆角轨道、
+ * 17dp（拖动中 20dp）primary 圆拖拽球 + 2dp 白描边。
+ * 只改样式（thumb/track 槽位），拖拽状态机 `scrubbing` 与 `PlayerConnection.seekTo` 一行未动。
+ * 注：自定义 thumb/track 槽位是 material3 1.3.0 的 @ExperimentalMaterial3Api 重载。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SeekBar(state: PlayerState) {
     val duration = state.durationMs
@@ -783,6 +835,15 @@ private fun SeekBar(state: PlayerState) {
     val progress = if (scrubbing >= 0f) scrubbing
     else if (duration > 0) state.positionMs.toFloat() / duration
     else 0f
+
+    // 拖拽球放大动画：scrubbing >= 0 即拖动/点按中。外层固定 20dp 盒子承载，
+    // 球体缩放不改变 Slider 的 thumbWidth → 拖动时轨道与滑块零跳动。
+    val ballSize by animateDpAsState(
+        targetValue = if (scrubbing >= 0f) 20.dp else 17.dp,
+        animationSpec = tween(durationMillis = 160),
+        label = "seekThumb"
+    )
+    val primary = MaterialTheme.colorScheme.primary
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
         Slider(
@@ -794,11 +855,50 @@ private fun SeekBar(state: PlayerState) {
                 }
                 scrubbing = -1f
             },
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = Color.White.copy(alpha = 0.25f)
-            )
+            // 拖拽球：primary 实心 + 2dp 白描边；固定 20dp 外盒（Slider 用它的宽度算 thumbWidth）
+            thumb = {
+                Box(
+                    modifier = Modifier.size(20.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(ballSize)
+                            .clip(CircleShape)
+                            .background(primary)
+                            .border(width = 2.dp, color = Color.White, shape = CircleShape)
+                    )
+                }
+            },
+            // 轨道：未播放 白22% 圆角；已播放 primary → 亮 primary（primary 向白插值）渐变
+            track = { sliderState ->
+                val range = sliderState.valueRange
+                val span = range.endInclusive - range.start
+                val fraction = if (span > 0f) {
+                    ((sliderState.value - range.start) / span).coerceIn(0f, 1f)
+                } else 0f
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .background(
+                            color = Color.White.copy(alpha = 0.22f),
+                            shape = RoundedCornerShape(3.dp)
+                        )
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(fraction)
+                            .height(6.dp)
+                            .background(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(primary, lerp(primary, Color.White, 0.55f))
+                                ),
+                                shape = RoundedCornerShape(3.dp)
+                            )
+                    )
+                }
+            }
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
