@@ -93,7 +93,8 @@ fun StartPositionTicker(state: PlayerState?) {
     LaunchedEffect(state) {
         while (state != null) {
             state.tick()
-            delay(500)
+            // P9：500ms → 200ms，歌词/进度高亮的滞后上限从 0.5s 降到 0.2s
+            delay(200)
         }
     }
 }

@@ -25,12 +25,14 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -254,6 +256,7 @@ fun PlayerScreen(onClose: () -> Unit) {
                     state = state,
                     lines = lyricLines,
                     loaded = lyricLoaded,
+                    mediaId = mediaId,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
@@ -591,74 +594,169 @@ private fun QueueSheet(state: PlayerState, onDismiss: () -> Unit) {
  * 歌词区（海报中层浮块）：无 .lrc 显示「暂无歌词」；有则按进度高亮当前行并滚动到中部。
  * 点击任意歌词行可跳转到对应时间。
  * 海报背景上统一用白色系保证明暗主题下都可读。
+ *
+ * P9：块头部带手动偏移控件（±1 秒步进 + 重置）。在线歌词时间轴与实际音频版本
+ * 常常对不上（VIP 试听片段 30s vs 歌词 4 分钟、不同专辑版本），逐句漂移无法靠
+ * 自动对齐解决，手动偏移是这类问题的工业标准解法。偏移是会话级状态，换歌归零。
  */
 @Composable
 private fun LyricSection(
     state: PlayerState,
     lines: List<LyricLine>,
     loaded: Boolean,
+    mediaId: String,
     modifier: Modifier = Modifier
 ) {
-    if (lines.isEmpty()) {
-        Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            Text(
-                text = if (loaded) stringResource(R.string.no_lyrics) else "",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.6f)
-            )
-        }
-        return
-    }
+    // 歌词偏移（会话级，换歌归零）：正数=歌词提前显示，负数=延后
+    var lyricOffsetMs by remember(mediaId) { mutableStateOf(0L) }
 
-    val listState = rememberLazyListState()
-    val density = LocalDensity.current
-    var viewportHeight by remember { mutableIntStateOf(0) }
+    Column(modifier = modifier) {
+        // 头部：− 歌词偏移 N 秒 + / 重置（白55 小字 + primary 图标钮，融入沉浸布局）
+        LyricOffsetBar(
+            offsetMs = lyricOffsetMs,
+            onStep = { delta -> lyricOffsetMs += delta },
+            onReset = { lyricOffsetMs = 0L }
+        )
 
-    // 最后一个 timeMs <= 当前进度的行即当前行
-    val currentLineIndex = remember(lines, state.positionMs) {
-        var index = -1
-        for (i in lines.indices) {
-            if (lines[i].timeMs <= state.positionMs) index = i else break
-        }
-        index
-    }
-
-    LazyColumn(
-        state = listState,
-        modifier = modifier.onSizeChanged { viewportHeight = it.height },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        contentPadding = PaddingValues(vertical = 4.dp)
-    ) {
-        itemsIndexed(lines) { index, line ->
-            val active = index == currentLineIndex
-            Text(
-                text = line.text,
-                style = MaterialTheme.typography.bodyLarge,
-                fontSize = 16.sp,
-                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (active)
-                    Color.White
-                else
-                    Color.White.copy(alpha = 0.6f),
-                textAlign = TextAlign.Center,
+        if (lines.isEmpty()) {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { PlayerConnection.seekTo(line.timeMs) }
-                    .padding(horizontal = 24.dp, vertical = 6.dp)
-            )
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (loaded) stringResource(R.string.no_lyrics) else "",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
+        } else {
+            val listState = rememberLazyListState()
+            val density = LocalDensity.current
+            var viewportHeight by remember { mutableIntStateOf(0) }
+
+            // 高亮判定用「进度 + 手动偏移」：偏移为正 → effective 更大 → 歌词行更早点亮（提前）
+            val effectiveMs = state.positionMs + lyricOffsetMs
+
+            // 最后一个 timeMs <= effective 的行即当前行
+            val currentLineIndex = remember(lines, effectiveMs) {
+                var index = -1
+                for (i in lines.indices) {
+                    if (lines[i].timeMs <= effectiveMs) index = i else break
+                }
+                index
+            }
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .onSizeChanged { viewportHeight = it.height },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                contentPadding = PaddingValues(vertical = 4.dp)
+            ) {
+                itemsIndexed(lines) { index, line ->
+                    val active = index == currentLineIndex
+                    Text(
+                        text = line.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontSize = 16.sp,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (active)
+                            Color.White
+                        else
+                            Color.White.copy(alpha = 0.6f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { PlayerConnection.seekTo(line.timeMs) }
+                            .padding(horizontal = 24.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            // 当前行滚动到歌词区中部
+            LaunchedEffect(currentLineIndex, viewportHeight) {
+                if (currentLineIndex >= 0 &&
+                    viewportHeight > 0 &&
+                    currentLineIndex < listState.layoutInfo.totalItemsCount
+                ) {
+                    val linePx = with(density) { 34.dp.toPx() }.toInt()
+                    val offset = (viewportHeight / 2 - linePx / 2).coerceAtLeast(0)
+                    listState.animateScrollToItem(currentLineIndex, offset)
+                }
+            }
         }
     }
+}
 
-    // 当前行滚动到歌词区中部
-    LaunchedEffect(currentLineIndex, viewportHeight) {
-        if (currentLineIndex >= 0 &&
-            viewportHeight > 0 &&
-            currentLineIndex < listState.layoutInfo.totalItemsCount
+/** 歌词偏移步长：每点一次 ±1000ms（1 秒） */
+private const val LYRIC_OFFSET_STEP_MS = 1000L
+
+/**
+ * P9 歌词手动偏移控件：`−` 歌词偏移 N 秒 `+` 「重置」。
+ * 偏移语义：effective = 进度 + offset，正 offset 使歌词提前显示、负 offset 使歌词延后；
+ * 按钮方向与显示值一致（`+` 增大显示值=歌词提前，`−` 减小显示值=歌词延后）。
+ */
+@Composable
+private fun LyricOffsetBar(
+    offsetMs: Long,
+    onStep: (Long) -> Unit,
+    onReset: () -> Unit
+) {
+    val seconds = offsetMs / LYRIC_OFFSET_STEP_MS
+    val shownOffset = when {
+        seconds > 0 -> stringResource(R.string.lyric_offset_pos, seconds)
+        seconds < 0 -> stringResource(R.string.lyric_offset_neg, -seconds)
+        else -> stringResource(R.string.lyric_offset_zero)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        IconButton(
+            onClick = { onStep(-LYRIC_OFFSET_STEP_MS) },
+            modifier = Modifier.size(32.dp)
         ) {
-            val linePx = with(density) { 34.dp.toPx() }.toInt()
-            val offset = (viewportHeight / 2 - linePx / 2).coerceAtLeast(0)
-            listState.animateScrollToItem(currentLineIndex, offset)
+            Icon(
+                imageVector = Icons.Default.Remove,
+                contentDescription = stringResource(R.string.lyric_offset_later),
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
         }
+        Text(
+            text = stringResource(R.string.lyric_offset_label, shownOffset),
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.55f),
+            modifier = Modifier.padding(horizontal = 6.dp)
+        )
+        IconButton(
+            onClick = { onStep(LYRIC_OFFSET_STEP_MS) },
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = stringResource(R.string.lyric_offset_earlier),
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+        Text(
+            text = stringResource(R.string.lyric_offset_reset),
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.55f),
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .clickable(onClick = onReset)
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        )
     }
 }
 

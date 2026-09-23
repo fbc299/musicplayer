@@ -53,6 +53,15 @@
     <!-- P2：歌词 -->
     <string name="no_lyrics">暂无歌词</string>
 
+    <!-- P9：歌词手动偏移（时间轴与音频版本不一致时的对齐手段） -->
+    <string name="lyric_offset_label">歌词偏移 %1$s</string>
+    <string name="lyric_offset_pos">+%1$d 秒</string>
+    <string name="lyric_offset_neg">−%1$d 秒</string>
+    <string name="lyric_offset_zero">0 秒</string>
+    <string name="lyric_offset_earlier">歌词提前 1 秒</string>
+    <string name="lyric_offset_later">歌词延后 1 秒</string>
+    <string name="lyric_offset_reset">重置</string>
+
     <!-- P2：设置 -->
     <string name="settings_library">音乐库</string>
     <string name="filter_enabled">启用最短时长过滤</string>
