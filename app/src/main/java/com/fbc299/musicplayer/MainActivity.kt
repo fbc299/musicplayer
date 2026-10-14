@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import com.fbc299.musicplayer.R
@@ -30,12 +31,21 @@ import com.fbc299.musicplayer.ui.LocalScrapedCovers
 import com.fbc299.musicplayer.ui.home.HomeScreen
 import com.fbc299.musicplayer.ui.player.PlayerScreen
 import com.fbc299.musicplayer.ui.theme.MusicTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         PlayerConnection.connect(applicationContext)
+
+        // P15-2 冷启动恢复：后台等 controller 就绪后自动续播上次队列/位置；
+        // 失败（无数据 / 超时 / 无效 URI）静默跳过，不影响冷启动。
+        lifecycleScope.launch {
+            runCatching {
+                PlayerConnection.restorePlayback(applicationContext)
+            }
+        }
 
         setContent {
             MusicTheme {
