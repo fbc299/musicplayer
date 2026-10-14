@@ -719,7 +719,7 @@ private fun normalizeSwitchKey(text: String): String = text
     .lowercase()
     .replace(Regex("""[\s\-_·・.。，,、:：!！?？()（）\[\]【】'’“”"]+"""), "")
 
-/** 换源候选优先级：SOURCES 顺序（migu → netease → kuwo），未知源排最后 */
+/** 换源候选优先级：SOURCES 顺序（migu → kugou → netease → kuwo），未知源排最后 */
 private fun sourceSortKey(source: String): Int =
     OnlineMusicSource.SOURCES.indexOf(source)
         .let { index -> if (index >= 0) index else Int.MAX_VALUE }
@@ -727,6 +727,7 @@ private fun sourceSortKey(source: String): Int =
 /** 数据源中文名（Toast 文案用，与在线列表行内来源标同源） */
 private fun sourceLabel(context: Context, source: String): String = when (source) {
     "migu" -> context.getString(R.string.source_migu)
+    "kugou" -> context.getString(R.string.source_kugou)
     "netease" -> context.getString(R.string.source_netease)
     "kuwo" -> context.getString(R.string.source_kuwo)
     "qq" -> context.getString(R.string.source_qq)

@@ -92,6 +92,7 @@
     <string name="source_netease">网易云</string>
     <string name="source_qq">QQ</string>
     <string name="source_migu">咪咕</string>
+    <string name="source_kugou">酷狗</string>
     <string name="source_kuwo">酷我</string>
 
     <!-- P9：短音频试听自动换源 -->

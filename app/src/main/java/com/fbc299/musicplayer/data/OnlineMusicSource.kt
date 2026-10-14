@@ -49,7 +49,7 @@ data class ResolvedUrl(
 
 /** 在线搜索结果（自建 Meting 聚合 API） */
 data class OnlineSong(
-    /** 数据源：migu / netease / kuwo / qq */
+    /** 数据源：migu / kugou / netease / kuwo / qq */
     val source: String,
     /** 源站原始 id（网易为数字，QQ 为 mid 字符串） */
     val sourceId: String,
@@ -84,7 +84,7 @@ data class OnlineSong(
  * 在线音源网络层：HttpURLConnection + kotlinx.coroutines，无第三方依赖。
  *
  * 对接自建 Meting 聚合服务（标准 metowolf/Meting 接口）：
- *   GET /?type=search&source={migu|netease|kuwo|qq}&name={关键词}&s=0&n=20  → JSON 数组
+ *   GET /?type=search&source={migu|kugou|netease|kuwo|qq}&name={关键词}&s=0&n=20  → JSON 数组
  *   GET /?type=url&source=...&id=...                              → {url: 直链}
  *   GET /?type=lyric&source=...&id=...                            → LRC 文本
  *   GET /?type=pic&source=...&id={pic_id}&size=500                → {url: 封面图 URL}
@@ -100,10 +100,11 @@ object OnlineMusicSource {
 
     /**
      * 依次尝试的数据源（搜索时全部并发请求后合并去重）。
-     * 顺序即优先级：migu（咪咕 VIP 歌给整曲）→ netease → kuwo；
-     * 同一首歌只保留列表中最先命中来源的条目。
+     * 顺序即优先级：migu（咪咕 VIP 歌给整曲，免费）→ kugou（酷狗库最大，
+     * 配服务端 cookie 时 VIP 整曲，无 cookie 时 VIP 歌解析不出直链会被换源逻辑自动跳过）
+     * → netease → kuwo；同一首歌只保留列表中最先命中来源的条目。
      */
-    val SOURCES = listOf("migu", "netease", "kuwo")
+    val SOURCES = listOf("migu", "kugou", "netease", "kuwo")
 
     private const val TIMEOUT_MS = 8_000
     private const val PAGE_SIZE = 20
@@ -111,10 +112,10 @@ object OnlineMusicSource {
     /**
      * 聚合搜索：并发请求给定数据源（默认 SOURCES），单源失败静默忽略；
      * 全部数据源失败才抛异常（调用方显示「在线搜索失败」）。
-     * 结果先按 SOURCES 优先级稳定排序（migu → netease → kuwo），再按
+     * 结果先按 SOURCES 优先级稳定排序（migu → kugou → netease → kuwo），再按
      * 「歌名+歌手」规范化去重 —— 同一首歌只留优先级最高来源的条目，
      * 不同歌曲各自保留（咪咕整曲优先）。
-     * @param sources 仅请求这些数据源（P5 封面刮削只搜 netease 取 pic_id）
+     * @param sources 仅请求这些数据源（P16 前封面刮削只搜 netease 取 pic_id，现走全源）
      */
     suspend fun search(
         server: String,
@@ -123,7 +124,7 @@ object OnlineMusicSource {
     ): List<OnlineSong> = dedupeByTitleArtist(searchRaw(server, keyword, sources))
 
     /**
-     * P9：与 search 同一条链路，但**不去重** —— 同一首歌的 migu / netease / kuwo 条目
+     * P9：与 search 同一条链路，但**不去重** —— 同一首歌的 migu / kugou / netease / kuwo 条目
      * 全部保留（仍按 SOURCES 优先级排序），用作试听换源的候选池；
      * 展示列表仍走 search()（dedupeByTitleArtist 后一首歌只留最高优先级来源）。
      */
@@ -145,7 +146,7 @@ object OnlineMusicSource {
                 throw (results.firstOrNull()?.exceptionOrNull()
                     ?: IOException("online search failed"))
             }
-            // 稳定排序到 SOURCES 优先级（migu → netease → kuwo），不去重
+            // 稳定排序到 SOURCES 优先级（migu → kugou → netease → kuwo），不去重
             lists.flatten().sortedBy { song -> sourcePriority(song.source) }
         }
 
@@ -490,7 +491,7 @@ object OnlineMusicSource {
 
     /**
      * 按「歌名+歌手」规范化去重（小写、去空白），保留先出现的来源 ——
-     * 输入已按来源优先级排好序，故同名曲留下的必是 migu → netease → kuwo 中首个命中的。
+     * 输入已按来源优先级排好序，故同名曲留下的必是 migu → kugou → netease → kuwo 中首个命中的。
      * P9 起公开：LibraryViewModel 用 searchRaw() 取全量候选池，再用本方法还原展示列表。
      */
     fun dedupeByTitleArtist(songs: List<OnlineSong>): List<OnlineSong> {
