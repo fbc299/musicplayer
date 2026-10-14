@@ -65,26 +65,20 @@ object PlayerConnection {
     suspend fun whenReady(timeoutMs: Long = 10_000): Boolean {
         controller?.let { return true }
         val f = future ?: return false
-        var completed = false
-        val result = withTimeoutOrNull(timeoutMs.milliseconds) {
+        val ready = withTimeoutOrNull(timeoutMs.milliseconds) {
             suspendCancellableCoroutine { cont ->
                 if (f.isDone) {
-                    completed = true
-                    cont.resume(true)
+                    val ok = try { controller = f.get(); true } catch (_: Exception) { false }
+                    cont.resume(ok)
                     return@suspendCancellableCoroutine
                 }
                 f.addListener({
-                    try {
-                        controller = f.get()
-                        completed = true
-                    } catch (_: Exception) {
-                        completed = false
-                    }
-                    cont.resume(completed)
+                    val ok = try { controller = f.get(); true } catch (_: Exception) { false }
+                    cont.resume(ok)
                 }, MoreExecutors.directExecutor())
             }
         } ?: false
-        return result
+        return ready
     }
 
     /**
@@ -103,6 +97,7 @@ object PlayerConnection {
             c.setMediaItems(items, saved.index, saved.positionMs)
             c.prepare()
             c.play()
+            true
         }.getOrElse {
             // 恢复路径出错（如本地 content:// 已失效）：保持静默，App 正常冷启动
             false
@@ -122,9 +117,11 @@ object PlayerConnection {
                 val c = controller ?: continue
                 if (c.mediaItemCount == 0) continue
                 try {
+                    // P15-2：MediaController 无 mediaItems 属性，按 mediaItemCount 逐个取
+                    val items = (0 until c.mediaItemCount).map { c.getMediaItemAt(it) }
                     PlaybackStateStore.save(
                         context,
-                        c.mediaItems,
+                        items,
                         c.currentMediaItemIndex,
                         c.currentPosition
                     )

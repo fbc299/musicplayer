@@ -48,7 +48,7 @@ object PlaybackStateStore {
         for (item in items) {
             val o = JSONObject()
             o.put("mediaId", item.mediaId)
-            item.uri?.let { o.put("uri", it.toString()) }
+            o.put("uri", item.requestMetadata.mediaUri.toString())
             val meta = item.mediaMetadata
             o.put("title", meta.title?.toString() ?: "")
             o.put("artist", meta.artist?.toString() ?: "")
