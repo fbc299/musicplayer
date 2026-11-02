@@ -93,10 +93,13 @@ object SongDownloader {
         if (url.isBlank()) return@withContext DownloadResult.Failed("blank url")
         val fileName = fileNameOf(title, artist)
 
-        // —— 去重：MediaStore 同名（DISPLAY_NAME 精确匹配）或目标文件已存在 → 不重复下载 ——
-        if (existsInMediaStore(context, fileName) ||
-            targetFile(context, fileName).exists()
-        ) {
+        // —— 去重：MediaStore 同名（DISPLAY_NAME 精确匹配）→ 不重复下载 ——
+        // ≥29 走 MediaStore 主路径，scoped storage 下 getExternalStoragePublicDirectory()
+        // 的 File.exists() 永远 false，是死路径（碰巧也让去重看起来常失效），故仅 <29 才补文件存在性判断
+        val duplicated = existsInMediaStore(context, fileName) ||
+            (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+                targetFile(context, fileName).exists())
+        if (duplicated) {
             return@withContext DownloadResult.AlreadyExists
         }
         // 26–28 回退路径要写公共目录：未授权如实降级（旧设备罕见，不做复杂权限流程）
