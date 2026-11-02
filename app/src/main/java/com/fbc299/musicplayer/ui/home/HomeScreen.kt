@@ -492,7 +492,8 @@ fun HomeScreen(
                     onServerUrlChanged = { libraryViewModel.setServerUrl(it) },
                     onScraperEnabledChanged = { libraryViewModel.setScraperEnabled(it) },
                     scrapeStatus = scrapeStatus,
-                    onRetryCovers = { libraryViewModel.retryFailedCovers() }
+                    onRetryCovers = { libraryViewModel.retryFailedCovers() },
+                    onClearCache = { libraryViewModel.clearPlaybackCache() }
                 )
             }
         }

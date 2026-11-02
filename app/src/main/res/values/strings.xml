@@ -123,4 +123,11 @@
     <string name="scrape_status">封面刮削：成功 %1$d · 失败 %2$d / 共 %3$d</string>
     <string name="scrape_status_running">封面刮削中… 已处理 %1$d/%2$d</string>
     <string name="retry_failed_covers">重试失败的封面</string>
+
+    <!-- P17：播放缓存清理（PlaybackService 的 ExoPlayer 文件缓存） -->
+    <string name="settings_cache">缓存</string>
+    <string name="clear_cache">清除播放缓存</string>
+    <string name="clear_cache_desc">删除在线播放的临时缓存文件（最多约 512MB）；播放中清理可能让当前歌曲重新缓冲</string>
+    <string name="cache_cleared">播放缓存已清除</string>
+    <string name="cache_clear_failed">清除未完成，请稍后重试</string>
 </resources>

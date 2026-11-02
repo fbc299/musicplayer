@@ -67,7 +67,9 @@ fun SettingsTab(
     onScraperEnabledChanged: (Boolean) -> Unit,
     scrapeStatus: ScrapeStatus,
     /** P17：重试失败的封面（清除负缓存后重跑一轮刮削） */
-    onRetryCovers: () -> Unit = {}
+    onRetryCovers: () -> Unit = {},
+    /** P17：清除播放缓存（删除 filesDir/exo_cache） */
+    onClearCache: () -> Unit = {}
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         // 沉浸锚点：顶部渐变 + 音符水印（同歌曲/艺术家页）
@@ -326,6 +328,28 @@ fun SettingsTab(
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // —— P17 缓存 ——
+            Panel {
+                SectionTitle(text = stringResource(R.string.settings_cache))
+                Text(
+                    text = stringResource(R.string.clear_cache_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.55f)
+                )
+                TextButton(
+                    onClick = onClearCache,
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.clear_cache),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
 

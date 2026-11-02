@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fbc299.musicplayer.R
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /** 在线搜索输入防抖（毫秒） */
 private const val ONLINE_SEARCH_DEBOUNCE_MS = 350L
@@ -214,6 +216,29 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private fun toast(resId: Int, vararg args: Any) {
         val app = getApplication<Application>()
         Toast.makeText(app, app.getString(resId, *args), Toast.LENGTH_SHORT).show()
+    }
+
+    // ——————————————————— P17 播放缓存清理 ———————————————————
+
+    /**
+     * 清除播放缓存：删除 filesDir/exo_cache 下的全部内容
+     * （PlaybackService 的 SimpleCache 上限 512MB，会长期占着应用私有存储，此前无任何清理入口）。
+     *
+     * 尽力而为：单个文件删不掉（正在播放时缓存文件被 SimpleCache 占用）不算失败，静默跳过；
+     * 最终据「是否还有残留」给出 Toast。播放中清理可能让当前歌曲重新缓冲，属预期行为。
+     */
+    fun clearPlaybackCache() {
+        viewModelScope.launch {
+            val dir = File(getApplication<Application>().filesDir, "exo_cache")
+            val leftover = withContext(Dispatchers.IO) {
+                runCatching {
+                    dir.listFiles()?.forEach { child -> runCatching { child.deleteRecursively() } }
+                    // 再查一次：仍能列出文件即视为没清干净（占用/权限）
+                    dir.listFiles()?.isNotEmpty() ?: false
+                }.getOrDefault(true)
+            }
+            toast(if (leftover) R.string.cache_clear_failed else R.string.cache_cleared)
+        }
     }
 
     // ——————————————————— P5 封面刮削 ———————————————————
