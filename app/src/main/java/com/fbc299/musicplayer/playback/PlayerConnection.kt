@@ -38,6 +38,10 @@ object PlayerConnection {
     private var saverJob: Job? = null
     private var started = false
 
+    /** 冷启动恢复只做一次的守卫状态（见 markRestoreAttempted） */
+    private val restoreLock = Any()
+    private var restoreAttempted = false
+
     @Synchronized
     fun connect(context: Context) {
         if (future != null) return
@@ -82,25 +86,40 @@ object PlayerConnection {
     }
 
     /**
-     * P15-2 冷启动恢复播放：等 controller 就绪 → 读持久化状态 → 有数据则重放队列并续播。
+     * P15-2 冷启动恢复播放：等 controller 就绪 → 读持久化状态 → 有数据则重放队列并按
+     * 保存时的播放态决定是否自动续播（wasPlaying=true 才 play()，否则只恢复队列+进度并保持暂停）。
      * 恢复失败（无数据 / 无效 URI / 超时）静默跳过，绝不影响冷启动。
-     * 调用方在应用冷启动时跑一次即可（lifecycleScope + 进程级一次性守卫）。
-     * @return 是否成功恢复了播放（供调用方决定要不要打开播放页等，当前仅返回结果）
+     *
+     * 进程级一次性守卫：Manifest 未声明 configChanges，转屏会重建 Activity 再次调用本方法，
+     * 若无守卫就会用 15 秒前的快照覆盖当前队列并重新播放。故方法体只允许执行一次，
+     * 并发调用者（多个协程同时进来）立即返回 false。
+     * @return 是否成功恢复了播放队列
      */
     suspend fun restorePlayback(context: Context, timeoutMs: Long = 10_000): Boolean {
+        if (!markRestoreAttempted()) return false
         if (!whenReady(timeoutMs)) return false
         val saved = PlaybackStateStore.load(context) ?: return false
         val items = PlaybackStateStore.toMediaItems(saved)
         if (items.isEmpty()) return false
         return runCatching {
             val c = controller ?: return false
+            // setMediaItems 的 startPositionMs 已包含 seek 语义，不再重复 seekTo
             c.setMediaItems(items, saved.index, saved.positionMs)
             c.prepare()
-            c.play()
+            // 只有保存时确实在播放才续播；暂停态恢复后保持暂停（避免转屏/冷启动突然出声）
+            if (saved.wasPlaying) c.play() else c.pause()
             true
         }.getOrElse {
             // 恢复路径出错（如本地 content:// 已失效）：保持静默，App 正常冷启动
             false
+        }
+    }
+
+    /** 恢复播放的一次性守卫（synchronized 保证多协程并发调用时只有一个能进去） */
+    private fun markRestoreAttempted(): Boolean = synchronized(restoreLock) {
+        if (restoreAttempted) false else {
+            restoreAttempted = true
+            true
         }
     }
 
@@ -123,7 +142,8 @@ object PlayerConnection {
                         context,
                         items,
                         c.currentMediaItemIndex,
-                        c.currentPosition
+                        c.currentPosition,
+                        wasPlaying = c.isPlaying
                     )
                 } catch (e: CancellationException) {
                     throw e

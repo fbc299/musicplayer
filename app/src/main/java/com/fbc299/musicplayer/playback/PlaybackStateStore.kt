@@ -37,11 +37,26 @@ object PlaybackStateStore {
         val index: Int,
         val positionMs: Long,
         /** 保存时刻（Unix 毫秒），恢复时超过阈值不自动续播（仅提示可选，当前直接恢复） */
-        val savedAtMs: Long
+        val savedAtMs: Long,
+        /**
+         * 保存时刻是否正在播放。
+         * 恢复时据此决定「续播」还是「只恢复队列与进度但保持暂停」；
+         * 旧版本没有该字段，读取时缺省 false（等价于按暂停态恢复，不会突然出声）。
+         */
+        val wasPlaying: Boolean = false
     )
 
-    /** 取当前播放器状态并落盘；无 controller / 队列为空则跳过 */
-    fun save(context: Context, items: List<MediaItem>, index: Int, positionMs: Long) {
+    /**
+     * 取当前播放器状态并落盘；无 controller / 队列为空则跳过。
+     * @param wasPlaying 保存时刻是否正在播放（恢复时决定要不要自动续播）
+     */
+    fun save(
+        context: Context,
+        items: List<MediaItem>,
+        index: Int,
+        positionMs: Long,
+        wasPlaying: Boolean
+    ) {
         if (items.isEmpty()) return
         val json = JSONObject()
         val arr = JSONArray()
@@ -60,6 +75,7 @@ object PlaybackStateStore {
         json.put("index", index)
         json.put("positionMs", positionMs)
         json.put("savedAtMs", System.currentTimeMillis())
+        json.put("wasPlaying", wasPlaying)
         runCatching {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit().putString(KEY_STATE, json.toString()).apply()
@@ -92,7 +108,9 @@ object PlaybackStateStore {
                 items = items,
                 index = json.optInt("index", 0).coerceIn(0, items.size - 1),
                 positionMs = json.optLong("positionMs", 0L).coerceAtLeast(0L),
-                savedAtMs = json.optLong("savedAtMs", 0L)
+                savedAtMs = json.optLong("savedAtMs", 0L),
+                // 旧数据没有该字段 → false（按暂停态恢复，不会擅自出声）
+                wasPlaying = json.optBoolean("wasPlaying", false)
             )
     }.getOrNull()
 
