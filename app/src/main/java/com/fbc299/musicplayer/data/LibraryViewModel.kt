@@ -235,6 +235,20 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     /** 串行刮削任务（并发 1）；重扫 / 开关变化时先取消旧任务 */
     private var scrapeJob: Job? = null
 
+    /**
+     * P17 重试失败的封面：把空串负缓存（=上次已试失败）全部清除并落盘，
+     * 随后重跑一轮刮削 —— 失败项因缓存已被清掉会重新走网络。
+     * 无失败项时直接返回（避免无意义的整轮重扫）；成功 URL 与命中缓存一律保留。
+     */
+    fun retryFailedCovers() {
+        if (_coverMap.value.none { (_, url) -> url.isBlank() }) return
+        viewModelScope.launch {
+            _coverMap.value = _coverMap.value.filterValues { it.isNotBlank() }
+            runCatching { settingsRepository.saveCoverCache(_coverMap.value) }
+            startCoverScrape(songs.value)
+        }
+    }
+
     init {
         viewModelScope.launch {
             // P5：先把持久化刮削缓存加载进内存（命中即零网络），再启动扫描

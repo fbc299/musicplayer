@@ -26,6 +26,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -64,7 +65,9 @@ fun SettingsTab(
     onOnlineEnabledChanged: (Boolean) -> Unit,
     onServerUrlChanged: (String) -> Unit,
     onScraperEnabledChanged: (Boolean) -> Unit,
-    scrapeStatus: ScrapeStatus
+    scrapeStatus: ScrapeStatus,
+    /** P17：重试失败的封面（清除负缓存后重跑一轮刮削） */
+    onRetryCovers: () -> Unit = {}
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         // 沉浸锚点：顶部渐变 + 音符水印（同歌曲/艺术家页）
@@ -308,6 +311,21 @@ fun SettingsTab(
                         color = Color.White.copy(alpha = 0.55f),
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
+                }
+
+                // P17：存在失败项（负缓存）时才显示的重试入口 ——
+                // 失败封面原先永远不再重试，用户换网络/服务端恢复后没有任何补救手段
+                if (scrapeStatus.failed > 0) {
+                    TextButton(
+                        onClick = onRetryCovers,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.retry_failed_covers),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
 

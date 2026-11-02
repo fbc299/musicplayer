@@ -122,4 +122,5 @@
     <!-- P9：封面刮削进度 -->
     <string name="scrape_status">封面刮削：成功 %1$d · 失败 %2$d / 共 %3$d</string>
     <string name="scrape_status_running">封面刮削中… 已处理 %1$d/%2$d</string>
+    <string name="retry_failed_covers">重试失败的封面</string>
 </resources>
