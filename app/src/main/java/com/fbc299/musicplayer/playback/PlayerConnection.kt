@@ -126,6 +126,10 @@ object PlayerConnection {
     /**
      * P15-2 启动播放状态周期保存：每 15 秒取一次当前队列/位置落盘。
      * 幂等（started 守卫）；协程持有于 saverScope（应用进程级，杀进程才真正停）。
+     *
+     * P17：仅在真正播放时落盘 —— 暂停/空闲不再照写，否则「上次在播放」的快照会被
+     * 暂停态覆盖，冷启动恢复就永远只剩 paused 状态。暂停时旧快照继续有效，
+     * 恢复出来正是用户最后一次听到的位置。
      */
     private fun startStateSaver(context: Context) {
         if (started) return
@@ -135,6 +139,8 @@ object PlayerConnection {
                 delay(15_000)
                 val c = controller ?: continue
                 if (c.mediaItemCount == 0) continue
+                // 暂停 / 缓冲中 / 播放结束空闲：不覆盖快照
+                if (!c.isPlaying) continue
                 try {
                     // P15-2：MediaController 无 mediaItems 属性，按 mediaItemCount 逐个取
                     val items = (0 until c.mediaItemCount).map { c.getMediaItemAt(it) }
