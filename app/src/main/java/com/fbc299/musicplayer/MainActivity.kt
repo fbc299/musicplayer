@@ -10,10 +10,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
@@ -57,6 +59,25 @@ class MainActivity : ComponentActivity() {
                 val launcher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
                 ) { granted -> hasPermission = granted }
+
+                // P17：Android 13+ 媒体通知需要运行时授权。结果一律忽略 ——
+                // 拒绝只影响通知栏/锁屏控件，播放本身完全不受影响，故不阻断任何流程。
+                val notificationLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) { /* 拒绝静默：播放不依赖通知权限 */ }
+                var notificationAsked by rememberSaveable { mutableStateOf(false) }
+
+                if (hasPermission) {
+                    // 只在首次拿到音频权限后申请一次（转屏重建不重复弹窗骚扰）
+                    LaunchedEffect(Unit) {
+                        if (!notificationAsked) {
+                            notificationAsked = true
+                            if (!hasNotificationPermission()) {
+                                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }
+                    }
+                }
 
                 if (!hasPermission) {
                     PermissionScreen(onGrant = { launcher.launch(audioPermission()) })
@@ -122,6 +143,16 @@ class MainActivity : ComponentActivity() {
     private fun audioPermission(): String =
         if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
         else Manifest.permission.READ_EXTERNAL_STORAGE
+
+    /**
+     * 通知权限是否可用：Android 13 起 POST_NOTIFICATIONS 是运行时权限，
+     * 未授权时媒体前台服务通知被系统拦掉（播放仍在，但通知栏/锁屏无控件）；
+     * 13 以下安装即授予，直接视为已授权。
+     */
+    private fun hasNotificationPermission(): Boolean =
+        Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
 }
 
 /**
