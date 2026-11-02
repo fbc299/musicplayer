@@ -95,8 +95,8 @@ data class OnlineSong(
  */
 object OnlineMusicSource {
 
-    /** 默认聚合服务地址（与 SettingsRepository.DEFAULT_ONLINE_SERVER 同源） */
-    const val DEFAULT_SERVER = "http://fbc299.xyz:18090"
+    /** 默认聚合服务地址（HTTPS 反代 https://mt.fbc299.xyz → 127.0.0.1:18090，与 SettingsRepository.DEFAULT_ONLINE_SERVER 同源） */
+    const val DEFAULT_SERVER = "https://mt.fbc299.xyz"
 
     /**
      * 依次尝试的数据源（搜索时全部并发请求后合并去重）。

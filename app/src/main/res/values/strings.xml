@@ -82,7 +82,7 @@
     <string name="online_enabled">启用在线搜索</string>
     <string name="online_enabled_desc">开启后在歌曲页搜索时同步搜索在线音源（咪咕 / 网易云 / 酷我）</string>
     <string name="online_server_label">服务器地址</string>
-    <string name="online_server_hint">http://fbc299.xyz:18090</string>
+    <string name="online_server_hint">https://mt.fbc299.xyz</string>
     <string name="section_local">本地</string>
     <string name="section_online">在线</string>
     <string name="online_loading">正在搜索…</string>

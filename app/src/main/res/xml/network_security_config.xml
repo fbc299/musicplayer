@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  网络安全配置：默认禁止明文 HTTP（在线音源已走 HTTPS 反代 https://mt.fbc299.xyz）。
+
+  例外只给自建服务器域名 fbc299.xyz 及其子域：老用户设置里可能还存着手填的
+  http://fbc299.xyz:18090，若一律禁止明文，这类旧配置会直接请求失败且无提示。
+  其余任何域名（含第三方音源 CDN 的 http 直链）一律按 base-config 走 HTTPS。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">fbc299.xyz</domain>
+    </domain-config>
+</network-security-config>
