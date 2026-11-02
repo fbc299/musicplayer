@@ -10,6 +10,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -108,6 +109,12 @@ object OnlineMusicSource {
 
     private const val TIMEOUT_MS = 8_000
     private const val PAGE_SIZE = 20
+
+    /**
+     * 响应体读取上限（2MB）：搜索/歌词/直链解析都是小 JSON，
+     * 超过此值说明服务端异常（错误页 / 反代返回大文件），直接失败而不是把内存读爆。
+     */
+    private const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
     /**
      * 聚合搜索：并发请求给定数据源（默认 SOURCES），单源失败静默忽略；
@@ -257,7 +264,7 @@ object OnlineMusicSource {
 
     private fun normalizeServer(server: String): String = server.trim().trimEnd('/')
 
-    /** 同步 GET（只在 Dispatchers.IO 上被调用），8 秒连接/读取超时 */
+    /** 同步 GET（只在 Dispatchers.IO 上被调用），8 秒连接/读取超时；响应体上限 [MAX_RESPONSE_BYTES] */
     private fun httpGet(url: String): String {
         val conn = URL(url).openConnection() as? HttpURLConnection
             ?: throw IOException("unsupported url: $url")
@@ -269,8 +276,27 @@ object OnlineMusicSource {
             conn.setRequestProperty("User-Agent", "Mozilla/5.0")
             val code = conn.responseCode
             if (code !in 200..299) throw IOException("HTTP $code for $url")
-            return conn.inputStream.bufferedReader(charsetOf(conn.contentType))
-                .use { it.readText() }
+            // 有 Content-Length 时先按响应头拒掉，避免白读；无头（-1）交给边读边计数
+            val declared = conn.contentLengthLong
+            if (declared > MAX_RESPONSE_BYTES) {
+                throw IOException("response too large: $declared bytes for $url")
+            }
+            val charset = charsetOf(conn.contentType)
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(8 * 1024)
+            var total = 0
+            conn.inputStream.use { input ->
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    if (total > MAX_RESPONSE_BYTES) {
+                        throw IOException("response exceeds $MAX_RESPONSE_BYTES bytes for $url")
+                    }
+                    out.write(buffer, 0, read)
+                }
+            }
+            return String(out.toByteArray(), charset)
         } finally {
             conn.disconnect()
         }

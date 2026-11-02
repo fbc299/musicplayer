@@ -16,6 +16,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.HttpURLConnection
@@ -55,6 +56,9 @@ object SongDownloader {
     private const val CONNECT_TIMEOUT_MS = 15_000
     private const val READ_TIMEOUT_MS = 15_000
 
+    /** 单曲下载体积上限（100MB）：防异常直链（错误页 / 无限流）把存储写满 */
+    private const val MAX_DOWNLOAD_BYTES = 100L * 1024 * 1024
+
     /** 拷贝缓冲区大小（8KB） */
     private const val BUFFER_SIZE = 8 * 1024
 
@@ -91,17 +95,7 @@ object SongDownloader {
         artist: String
     ): DownloadResult = withContext(Dispatchers.IO) {
         if (url.isBlank()) return@withContext DownloadResult.Failed("blank url")
-        val fileName = fileNameOf(title, artist)
 
-        // —— 去重：MediaStore 同名（DISPLAY_NAME 精确匹配）→ 不重复下载 ——
-        // ≥29 走 MediaStore 主路径，scoped storage 下 getExternalStoragePublicDirectory()
-        // 的 File.exists() 永远 false，是死路径（碰巧也让去重看起来常失效），故仅 <29 才补文件存在性判断
-        val duplicated = existsInMediaStore(context, fileName) ||
-            (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
-                targetFile(context, fileName).exists())
-        if (duplicated) {
-            return@withContext DownloadResult.AlreadyExists
-        }
         // 26–28 回退路径要写公共目录：未授权如实降级（旧设备罕见，不做复杂权限流程）
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
             context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
@@ -125,11 +119,34 @@ object SongDownloader {
             if (code !in 200..299) {
                 return@withContext DownloadResult.Failed("HTTP $code for $url")
             }
+            // 真实容器格式取自响应头（咪咕/酷狗常回 m4a/flac，固定 .mp3 会让播放器与媒体库识别出错）
+            val format = formatOf(conn.contentType)
+            val fileName = fileNameOf(title, artist, format.extension)
+
+            // —— 去重：MediaStore 同名（DISPLAY_NAME 精确匹配）→ 不重复下载 ——
+            // ≥29 走 MediaStore 主路径，scoped storage 下 getExternalStoragePublicDirectory()
+            // 的 File.exists() 永远 false，是死路径，故仅 <29 才补文件存在性判断
+            val duplicated = existsInMediaStore(context, fileName) ||
+                (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+                    targetFile(context, fileName).exists())
+            if (duplicated) return@withContext DownloadResult.AlreadyExists
+
+            // 体积上限：先看响应头（有 Content-Length 时零拷贝直接拒绝），无头则在拷贝中边写边卡
+            val declared = conn.contentLengthLong
+            if (declared > MAX_DOWNLOAD_BYTES) {
+                return@withContext DownloadResult.Failed("too large: $declared bytes for $url")
+            }
+
             // 分路径落盘（SDK_INT 分支内使用 RELATIVE_PATH / IS_PENDING，编译期均为 String 常量）
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                saveViaMediaStore(context, conn.inputStream, fileName)
+                saveViaMediaStore(context, conn.inputStream, fileName, format.mimeType)
             } else {
-                saveViaFile(context, targetFile(context, fileName), conn.inputStream)
+                saveViaFile(
+                    context,
+                    targetFile(context, fileName),
+                    conn.inputStream,
+                    format.mimeType
+                )
             }
         } catch (e: CancellationException) {
             throw e
@@ -141,6 +158,26 @@ object SongDownloader {
         }
     }
 
+    /** 落盘格式（扩展名 + MediaStore/MIME 类型），由响应头 Content-Type 推导 */
+    private data class AudioFormat(val extension: String, val mimeType: String)
+
+    /**
+     * 从 Content-Type 推导真实容器格式：
+     * audio/mp4|m4a|aac → .m4a，audio/flac|x-flac → .flac，audio/ogg|opus → .ogg，其余（含缺失）按 mp3。
+     * 只认 MIME 主类型，忽略 `; charset=` 之类参数。
+     */
+    private fun formatOf(contentType: String?): AudioFormat {
+        val type = contentType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
+        return when {
+            type.contains("mp4") || type.contains("m4a") || type.contains("aac") ->
+                AudioFormat("m4a", "audio/mp4")
+
+            type.contains("flac") -> AudioFormat("flac", "audio/flac")
+            type.contains("ogg") || type.contains("opus") -> AudioFormat("ogg", "audio/ogg")
+            else -> AudioFormat("mp3", "audio/mpeg")
+        }
+    }
+
     /**
      * ≥29 主路径（免权限）：MediaStore 音频集合插入 pending 条目 → 流式写入 → 清 pending。
      * 失败/取消时删除 pending 残留行，不留半成品文件。
@@ -148,12 +185,13 @@ object SongDownloader {
     private suspend fun saveViaMediaStore(
         context: Context,
         input: InputStream,
-        fileName: String
+        fileName: String,
+        mimeType: String
     ): DownloadResult {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
-            put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
+            put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
             put(
                 MediaStore.Audio.Media.RELATIVE_PATH,
                 "${Environment.DIRECTORY_MUSIC}/${subDirName(context)}"
@@ -184,7 +222,8 @@ object SongDownloader {
     private suspend fun saveViaFile(
         context: Context,
         target: File,
-        input: InputStream
+        input: InputStream,
+        mimeType: String
     ): DownloadResult {
         val dir = target.parentFile ?: return DownloadResult.Failed("no target dir")
         if (!dir.isDirectory && !dir.mkdirs()) {
@@ -200,19 +239,28 @@ object SongDownloader {
         MediaScannerConnection.scanFile(
             context,
             arrayOf(target.absolutePath),
-            arrayOf("audio/mpeg"),
+            arrayOf(mimeType),
             null
         )
         return DownloadResult.Saved(target.absolutePath)
     }
 
-    /** 流式拷贝：8KB 缓冲循环；每次读取前检查取消，CancellationException 正常传播 */
+    /**
+     * 流式拷贝：8KB 缓冲循环；每次读取前检查取消，CancellationException 正常传播。
+     * 累计写入超过 [MAX_DOWNLOAD_BYTES] 抛 IOException（无 Content-Length 时的体积兜底），
+     * 由调用方转成 DownloadResult.Failed 并清掉半成品文件。
+     */
     private suspend fun copyStream(input: InputStream, output: OutputStream) {
         val buffer = ByteArray(BUFFER_SIZE)
+        var total = 0L
         while (true) {
             currentCoroutineContext().ensureActive()
             val read = input.read(buffer)
             if (read < 0) break
+            total += read
+            if (total > MAX_DOWNLOAD_BYTES) {
+                throw IOException("download exceeds $MAX_DOWNLOAD_BYTES bytes")
+            }
             output.write(buffer, 0, read)
         }
         output.flush()
@@ -241,10 +289,11 @@ object SongDownloader {
     )
 
     /**
-     * 目标文件名 `{标题} - {歌手}.mp3`：清洗非法字符与控制字符；
+     * 目标文件名 `{标题} - {歌手}.{扩展名}`：清洗非法字符与控制字符；
      * 标题空（或清洗后为空）回退 `download_{时间戳}`；歌手空则省略「 - 歌手」段。
+     * 扩展名由响应头 Content-Type 推导（m4a / flac / ogg / mp3）。
      */
-    private fun fileNameOf(title: String, artist: String): String {
+    private fun fileNameOf(title: String, artist: String, extension: String): String {
         val stamp = System.currentTimeMillis()
         val raw = when {
             title.isBlank() -> "download_$stamp"
@@ -258,6 +307,6 @@ object SongDownloader {
             .trim('_')
             .trim()
         val base = cleaned.ifEmpty { "download_$stamp" }
-        return "$base.mp3"
+        return "$base.$extension"
     }
 }
