@@ -74,11 +74,22 @@ class PlayerState(val controller: MediaController) {
     }
 }
 
+/**
+ * P17 等待 controller 就绪并订阅播放状态：
+ * 每 200ms 轮询一次，最多等 [PLAYER_STATE_WAIT_MS]（15 秒），超时返回 null ——
+ * 原实现 while (value == null) 每 100ms 无限轮询，controller 永远连不上时会一直空转耗电。
+ * 调用方本来就把 null 当「暂无播放器」处理（播放页空态）。
+ */
+private const val PLAYER_STATE_WAIT_MS = 15_000L
+private const val PLAYER_STATE_POLL_MS = 200L
+
 @Composable
 fun rememberPlayerState(): PlayerState? {
     val state by produceState(initialValue = PlayerConnection.controller?.let { PlayerState(it) }) {
-        while (value == null) {
-            delay(100)
+        var waited = 0L
+        while (value == null && waited < PLAYER_STATE_WAIT_MS) {
+            delay(PLAYER_STATE_POLL_MS)
+            waited += PLAYER_STATE_POLL_MS
             PlayerConnection.controller?.let { value = PlayerState(it) }
         }
     }
