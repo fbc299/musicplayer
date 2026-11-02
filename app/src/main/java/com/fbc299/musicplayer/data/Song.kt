@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 data class Song(
     val id: Long,
@@ -26,13 +27,16 @@ data class Song(
     val formattedDuration: String
         get() {
             val sec = durationMs / 1000
-            return "%d:%02d".format(sec / 60, sec % 60)
+            // 固定 Locale.ROOT：阿拉伯语等区域会用本地数字/分隔符，时间与大小必须稳定
+            return String.format(Locale.ROOT, "%d:%02d", sec / 60, sec % 60)
         }
 
     val formattedSize: String
         get() = when {
-            sizeBytes >= 1_048_576 -> "%.1f MB".format(sizeBytes / 1_048_576.0)
-            else -> "%d KB".format(sizeBytes / 1024)
+            sizeBytes >= 1_048_576 ->
+                String.format(Locale.ROOT, "%.1f MB", sizeBytes / 1_048_576.0)
+
+            else -> String.format(Locale.ROOT, "%d KB", sizeBytes / 1024)
         }
 }
 
