@@ -28,6 +28,12 @@ private const val ONLINE_SEARCH_DEBOUNCE_MS = 350L
 private const val COVER_SAVE_EVERY = 10
 
 /**
+ * P17 封面刮削限速：每首（真正发起网络请求的那批）之间间隔 150ms。
+ * 纯缓存命中不发请求，无需等待；delay 本身可被取消，重扫/关开关能立即停。
+ */
+private const val COVER_SCRAPE_INTERVAL_MS = 150L
+
+/**
  * P9 封面刮削进度（供设置页展示）：
  * running>0 = 正在刮削；done = 成功数（含缓存命中）；failed = 失败数（含负缓存）；
  * total = 本轮曲目总数（0 = 尚未启动，UI 据此隐藏状态行）。
@@ -407,6 +413,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     sinceSave = 0
                     settingsRepository.saveCoverCache(_coverMap.value)
                 }
+                // P17 限速：整库刮削时每首之间停 150ms（delay 可取消，取消/关闭开关立即生效）
+                delay(COVER_SCRAPE_INTERVAL_MS)
             }
         } catch (e: CancellationException) {
             throw e

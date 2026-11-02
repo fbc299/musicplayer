@@ -4,12 +4,12 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
 /**
- * P5 本地封面刮削：按「歌名 歌手」经在线 Meting 客户端搜（P16 起多源并发：
- * migu / kugou / netease / kuwo 全搜合并去重），取相似度最高一条的封面 ——
+ * P5 本地封面刮削：按「歌名 歌手」经在线 Meting 客户端搜（P17 起按 SOURCES 顺序
+ * 逐源串行搜索，migu → kugou → netease → kuwo，第一个有结果的源就停），取相似度最高一条的封面 ——
  * 搜索结果带 pic 直链直接用，否则拿 pic_id 走 pic 端点换大图 URL。
  * 多源提高冷门歌命中率（同一首歌在不同源版权/收录不同）；
  * kugou pic 端点与 migu 直链实测可出图，kuwo pic 端点不可用（搜索条目无 pic 字段，
- * 由更高优先级的 migu/kugou/netease 条目先命中，不影响整体成功路径）。
+ * 由更高优先级的 migu/kugou/netease 命中，不影响整体成功路径）。
  *
  * 尽力而为：任何失败返回 null、不抛异常（绝不影响本地播放）；
  * 唯独取消（CancellationException）正常传播 —— 串行刮削队列依赖它停止。
@@ -50,11 +50,11 @@ object CoverScraper {
             .joinToString(" ")
 
         // ① 组合关键词搜索 → ② 结果空则降级只搜清洗后的歌名
-        val (first, firstError) = searchAll(server, keyword)
+        val (first, firstError) = searchFirstHit(server, keyword)
         var results = first
         var reason = firstError ?: "no result: $keyword"
         if (results.isEmpty() && keyword != cleaned) {
-            val (fallback, fallbackError) = searchAll(server, cleaned)
+            val (fallback, fallbackError) = searchFirstHit(server, cleaned)
             if (fallback.isNotEmpty()) {
                 results = fallback
                 reason = ""
@@ -64,8 +64,8 @@ object CoverScraper {
         }
         if (results.isEmpty()) return ScrapeOutcome(null, reason)
 
-        // P16 多源刮削：全源（migu/kugou/netease/kuwo）搜一次合并去重，
-        // 命中率比单源拉满；搜索结果自带 pic 直链（migu）或 pic_id（netease/kugou）
+        // P17 多源刮削：按 SOURCES 顺序逐源搜索，第一个有结果的源即用（不再四源并发），
+        // 搜索结果自带 pic 直链（migu）或 pic_id（netease/kugou）
         val best = pickBest(results, cleaned, artistTrim)
             ?: return ScrapeOutcome(null, "no match: $keyword")
 
@@ -79,19 +79,31 @@ object CoverScraper {
         else ScrapeOutcome(null, pic.exceptionOrNull()?.message ?: "pic empty: $keyword")
     }
 
-    /** P16 单次全源搜索（migu/kugou/netease/kuwo 并发 + 去重）：失败不抛（取消除外），返回 结果 + 失败原因 */
-    private suspend fun searchAll(
+    /** P17 单次搜索：按 SOURCES 顺序逐源串行请求，第一个有结果的源就停（不再四源并发）；
+     *  失败不抛（取消除外），返回 结果 + 失败原因。
+     *
+     *  逐个源的好处：冷门曲常见命中 migu，原实现每首都把 migu/kugou/netease/kuwo 全打一遍，
+     *  1000 首库一轮就是 4000 次请求、把自建服务端证书/反代都压出 429；串行首个命中即停，
+     *  常态只有 1 次请求，最坏（全源无结果）才 4 次。
+     */
+    private suspend fun searchFirstHit(
         server: String,
         keyword: String
     ): Pair<List<OnlineSong>, String?> {
-        val result = runCatching {
-            OnlineMusicSource.search(server, keyword)
+        var lastError: String? = null
+        for (source in OnlineMusicSource.SOURCES) {
+            val result = runCatching {
+                OnlineMusicSource.search(server, keyword, sources = listOf(source))
+            }
+            // runCatching 会吞掉取消异常：重新抛出，串行队列才能被取消
+            currentCoroutineContext().ensureActive()
+            val list = result.getOrNull()
+            if (!list.isNullOrEmpty()) return list to null
+            if (result.isFailure) {
+                lastError = result.exceptionOrNull()?.message ?: "search failed: $source"
+            }
         }
-        // runCatching 会吞掉取消异常：重新抛出，串行队列才能被取消
-        currentCoroutineContext().ensureActive()
-        val list = result.getOrNull()
-        return if (list != null) list to null
-        else emptyList<OnlineSong>() to (result.exceptionOrNull()?.message ?: "search failed")
+        return emptyList<OnlineSong>() to (lastError ?: "no result: $keyword")
     }
 
     /** 行首音轨前缀：「01 - 」「03.」「1_」「02 」等；纯数字标题（1984 / 100）不会被误伤 */
