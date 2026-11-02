@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  网络安全配置：默认禁止明文 HTTP（在线音源已走 HTTPS 反代 https://mt.fbc299.xyz）。
+  网络安全配置
 
-  例外只给自建服务器域名 fbc299.xyz 及其子域：老用户设置里可能还存着手填的
-  http://fbc299.xyz:18090，若一律禁止明文，这类旧配置会直接请求失败且无提示。
-  其余任何域名（含第三方音源 CDN 的 http 直链）一律按 base-config 走 HTTPS。
+  自建音源服务已改走 HTTPS 反代（https://mt.fbc299.xyz），但我们**不能**全局禁用明文：
+  实测网易云直链 6/6 都是 http://（m*.music.126.net 等镜像域名/IP 不定），
+  咪咕/酷狗的部分 CDN 同样有 http。base-config 一旦禁止明文，这些歌会直接播不出来，
+  而且域名无法预先枚举成白名单（反代/镜像会变），所以这里保持明文放行。
+
+  真正要收紧的是「我们自己的服务端」：默认地址已在代码里改成 HTTPS，
+  剩下的 http 只可能来自用户手填的旧地址（设置页可改），风险自担。
 -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">fbc299.xyz</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
 </network-security-config>
